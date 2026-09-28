@@ -66,3 +66,13 @@ pub extern fn ope_encoder_ctl(enc: *OggOpusEnc, request: c_int, ...) c_int;
 pub extern fn ope_strerror(err: c_int) [*:0]const u8;
 pub extern fn ope_get_version_string() [*:0]const u8;
 pub extern fn ope_get_abi_version() c_int;
+
+/// zig fork: allocator hook. `realloc(ctx, null, n)` must act like alloc; free never gets null.
+pub const ope_allocator = extern struct {
+    ctx: ?*anyopaque,
+    alloc: *const fn (ctx: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque,
+    realloc: *const fn (ctx: ?*anyopaque, ptr: ?*anyopaque, new_size: usize) callconv(.c) ?*anyopaque,
+    free: *const fn (ctx: ?*anyopaque, ptr: ?*anyopaque) callconv(.c) void,
+};
+/// null restores the default (libc, or null-returning stubs in the module build).
+pub extern fn ope_set_allocator(allocator: ?*const ope_allocator) void;

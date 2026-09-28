@@ -222,3 +222,13 @@ pub extern fn opus_projection_decode24(st: *OpusProjectionDecoder, data: ?[*]con
 pub extern fn opus_projection_decode_float(st: *OpusProjectionDecoder, data: ?[*]const u8, len: i32, pcm: [*]f32, frame_size: c_int, decode_fec: c_int) c_int;
 pub extern fn opus_projection_decoder_ctl(st: *OpusProjectionDecoder, request: c_int, ...) c_int;
 pub extern fn opus_projection_decoder_destroy(st: *OpusProjectionDecoder) void;
+
+/// zig fork: allocator hook. `realloc(ctx, null, n)` must act like alloc; free never gets null.
+pub const opus_allocator = extern struct {
+    ctx: ?*anyopaque,
+    alloc: *const fn (ctx: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque,
+    realloc: *const fn (ctx: ?*anyopaque, ptr: ?*anyopaque, new_size: usize) callconv(.c) ?*anyopaque,
+    free: *const fn (ctx: ?*anyopaque, ptr: ?*anyopaque) callconv(.c) void,
+};
+/// null restores the default (libc, or null-returning stubs in the module build).
+pub extern fn opus_set_allocator(allocator: ?*const opus_allocator) void;

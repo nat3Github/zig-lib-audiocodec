@@ -13,26 +13,29 @@ pub fn build(b: *std.Build) void {
 
     // Every vendor artifact is installed so dependents (test/) reach them via
     // `dependency("audiocodec", ...).artifact(name)` instead of pinning them again.
-    const vendored = [_]struct { dep: []const u8, artifacts: []const []const u8 }{
-        .{ .dep = "ogg", .artifacts = &.{"ogg"} },
-        .{ .dep = "vorbis", .artifacts = &.{"vorbis"} },
-        .{ .dep = "opus", .artifacts = &.{"opus"} },
-        .{ .dep = "opusenc", .artifacts = &.{"opusenc"} },
-        .{ .dep = "opusfile", .artifacts = &.{"opusfile"} },
-        .{ .dep = "flac", .artifacts = &.{"FLAC"} },
-        .{ .dep = "dr_libs", .artifacts = &.{ "dr_mp3", "dr_wav", "dr_flac" } },
-        .{ .dep = "minimp4", .artifacts = &.{"minimp4"} },
-        .{ .dep = "fdk_aac", .artifacts = &.{"fdk-aac"} },
-        .{ .dep = "alac", .artifacts = &.{"alac"} },
+    // libc_alloc = false: the C libs' default allocator hooks return NULL instead of calling
+    // malloc; src/c_allocator.zig installs the real hooks. flac threads = false: encoder
+    // worker threads would allocate outside the calling thread's allocator.
+    const hooked = .{ .target = target, .optimize = optimize, .libc_alloc = false };
+    const vendored = .{
+        .{ "ogg", .{"ogg"}, hooked },
+        .{ "vorbis", .{"vorbis"}, hooked },
+        .{ "opus", .{"opus"}, hooked },
+        .{ "opusenc", .{"opusenc"}, hooked },
+        .{ "opusfile", .{"opusfile"}, hooked },
+        .{ "flac", .{"FLAC"}, .{ .target = target, .optimize = optimize, .libc_alloc = false, .threads = false } },
+        .{ "dr_libs", .{ "dr_mp3", "dr_wav", "dr_flac" }, hooked },
+        .{ "minimp4", .{"minimp4"}, hooked },
+        .{ "fdk_aac", .{"fdk-aac"}, hooked },
+        .{ "alac", .{"alac"}, .{ .target = target, .optimize = optimize } },
     };
-    for (vendored) |v| {
-        const dep = b.dependency(v.dep, .{ .target = target, .optimize = optimize });
-        for (v.artifacts) |name| {
+    inline for (vendored) |v| {
+        const dep = b.dependency(v[0], v[2]);
+        inline for (v[1]) |name| {
             const lib = dep.artifact(name);
             b.installArtifact(lib);
             // dr_wav / dr_flac are test oracles only, never linked into the module.
-            if (std.mem.eql(u8, name, "dr_wav") or std.mem.eql(u8, name, "dr_flac")) continue;
-            mod.linkLibrary(lib);
+            if (comptime !(std.mem.eql(u8, name, "dr_wav") or std.mem.eql(u8, name, "dr_flac"))) mod.linkLibrary(lib);
         }
     }
 }

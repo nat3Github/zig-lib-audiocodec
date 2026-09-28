@@ -141,3 +141,13 @@ pub extern fn ogg_page_serialno(og: *const ogg_page) c_int;
 pub extern fn ogg_page_pageno(og: *const ogg_page) c_long;
 pub extern fn ogg_page_packets(og: *const ogg_page) c_int;
 pub extern fn ogg_packet_clear(op: *ogg_packet) void;
+
+/// zig fork: allocator hook. `realloc(ctx, null, n)` must act like alloc; free never gets null.
+pub const ogg_allocator = extern struct {
+    ctx: ?*anyopaque,
+    alloc: *const fn (ctx: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque,
+    realloc: *const fn (ctx: ?*anyopaque, ptr: ?*anyopaque, new_size: usize) callconv(.c) ?*anyopaque,
+    free: *const fn (ctx: ?*anyopaque, ptr: ?*anyopaque) callconv(.c) void,
+};
+/// null restores the default (libc, or null-returning stubs in the module build).
+pub extern fn ogg_set_allocator(allocator: ?*const ogg_allocator) void;
