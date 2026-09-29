@@ -57,6 +57,7 @@
         "src/flac.zig",
         "src/id3.zig",
         "src/libc.zig",
+        "src/m4a.zig",
         "src/mp3.zig",
         "src/ogg.zig",
         "src/opus.zig",

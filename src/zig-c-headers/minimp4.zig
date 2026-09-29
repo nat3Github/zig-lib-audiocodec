@@ -12,6 +12,8 @@ pub const MP4_OBJECT_TYPE_AUDIO_ISO_IEC_13818_7_SSR_PROFILE = 0x68;
 pub const MP4_OBJECT_TYPE_AVC = 0x21;
 pub const MP4_OBJECT_TYPE_HEVC = 0x23;
 pub const MP4_OBJECT_TYPE_USER_PRIVATE = 0xC0;
+/// Fork addition (zig: alac sample entry): MP4E writes an 'alac' sample entry, DSI = magic cookie.
+pub const MP4_OBJECT_TYPE_ALAC = 0x616C6163;
 
 pub const MP4E_STATUS_OK = 0;
 pub const MP4E_STATUS_BAD_ARGUMENTS = -1;

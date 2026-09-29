@@ -17,6 +17,7 @@ const ogg = @import("ogg.zig");
 const vorbis = @import("vorbis.zig");
 const opus = @import("opus.zig");
 const mp3 = @import("mp3.zig");
+const m4a = @import("m4a.zig");
 
 comptime {
     _ = @import("libc.zig");
@@ -224,6 +225,7 @@ const DecoderBackend = union(enum) {
     vorbis: vorbis.Decoder,
     opus: opus.Decoder,
     mp3: mp3.Decoder,
+    m4a: m4a.Decoder,
 };
 
 const EncoderBackend = union(enum) {
@@ -231,6 +233,7 @@ const EncoderBackend = union(enum) {
     flac: flac.Encoder,
     vorbis: vorbis.Encoder,
     opus: opus.Encoder,
+    m4a: m4a.Encoder,
 };
 
 comptime {
@@ -287,6 +290,7 @@ pub const Decoder = struct {
                 };
             },
             .mp3 => .{ .mp3 = try mp3.Decoder.open(gpa, arena.allocator(), reader, options.seeker, options.tags) },
+            .m4a => .{ .m4a = try m4a.Decoder.open(gpa, arena.allocator(), reader, options.seeker, options.tags) },
             else => return error.UnsupportedFormat,
         };
         return .{ .arena = arena, .backend = backend };
@@ -370,6 +374,11 @@ pub const Encoder = struct {
                 .vorbis => .{ .vorbis = try vorbis.Encoder.open(gpa, writer, options) },
                 .opus => .{ .opus = try opus.Encoder.open(gpa, writer, options) },
                 .flac => .{ .flac = try flac.Encoder.open(gpa, writer, options) },
+                else => return error.UnsupportedFormat,
+            },
+            // ponytail: aac (the m4a default) arrives with prompt 10.
+            .m4a => switch (options.codec orelse .aac) {
+                .alac => .{ .m4a = try m4a.Encoder.open(gpa, writer, options) },
                 else => return error.UnsupportedFormat,
             },
             else => return error.UnsupportedFormat,

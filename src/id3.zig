@@ -355,7 +355,7 @@ const text_keys = [_][2][]const u8{
 };
 
 /// ID3v1 genres 0..79 plus the Winamp extensions (as ffmpeg lists them).
-const genres = [_][]const u8{
+pub const genres = [_][]const u8{
     "Blues",                  "Classic Rock",      "Country",           "Dance",            "Disco",
     "Funk",                   "Grunge",            "Hip-Hop",           "Jazz",             "Metal",
     "New Age",                "Oldies",            "Other",             "Pop",              "R&B",
