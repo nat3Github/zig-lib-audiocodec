@@ -16,6 +16,7 @@ const flac = @import("flac.zig");
 const ogg = @import("ogg.zig");
 const vorbis = @import("vorbis.zig");
 const opus = @import("opus.zig");
+const mp3 = @import("mp3.zig");
 
 comptime {
     _ = @import("libc.zig");
@@ -222,6 +223,7 @@ const DecoderBackend = union(enum) {
     flac: flac.Decoder,
     vorbis: vorbis.Decoder,
     opus: opus.Decoder,
+    mp3: mp3.Decoder,
 };
 
 const EncoderBackend = union(enum) {
@@ -284,6 +286,7 @@ pub const Decoder = struct {
                     else => return error.UnsupportedFormat,
                 };
             },
+            .mp3 => .{ .mp3 = try mp3.Decoder.open(gpa, arena.allocator(), reader, options.seeker, options.tags) },
             else => return error.UnsupportedFormat,
         };
         return .{ .arena = arena, .backend = backend };

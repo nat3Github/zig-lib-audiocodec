@@ -52,10 +52,7 @@ fn oom() ?*anyopaque {
 }
 
 pub fn malloc(size: usize) callconv(.c) ?*anyopaque {
-    const allocator = current orelse return oom();
-    const len = std.math.add(usize, size, header) catch return oom();
-    const base = allocator.rawAlloc(len, alignment, @returnAddress()) orelse return oom();
-    return finish(base, size);
+    return alloc(current orelse return oom(), size) orelse oom();
 }
 
 pub fn calloc(count: usize, size: usize) callconv(.c) ?*anyopaque {
@@ -66,21 +63,36 @@ pub fn calloc(count: usize, size: usize) callconv(.c) ?*anyopaque {
 }
 
 pub fn realloc(ptr: ?*anyopaque, new_size: usize) callconv(.c) ?*anyopaque {
-    const old_ptr = ptr orelse return malloc(new_size);
-    const allocator = current orelse return oom();
+    return resize(current orelse return oom(), ptr, new_size) orelse oom();
+}
+
+pub fn free(ptr: ?*anyopaque) callconv(.c) void {
+    // A free outside a set/restore scope is a bug in our wrapper: the block would leak.
+    release(current.?, ptr);
+}
+
+/// malloc / realloc / free with an explicit allocator, for C libs that take allocation callbacks
+/// with a context pointer (dr_mp3). They do not touch `failed`.
+pub fn alloc(allocator: Allocator, size: usize) ?*anyopaque {
+    const len = std.math.add(usize, size, header) catch return null;
+    const base = allocator.rawAlloc(len, alignment, @returnAddress()) orelse return null;
+    return finish(base, size);
+}
+
+pub fn resize(allocator: Allocator, ptr: ?*anyopaque, new_size: usize) ?*anyopaque {
+    const old_ptr = ptr orelse return alloc(allocator, new_size);
     const old = block(old_ptr);
-    const len = std.math.add(usize, new_size, header) catch return oom();
+    const len = std.math.add(usize, new_size, header) catch return null;
     if (allocator.rawRemap(old, alignment, len, @returnAddress())) |base| return finish(base, new_size);
-    const new_ptr = malloc(new_size) orelse return null;
+    const new_ptr = alloc(allocator, new_size) orelse return null;
     const keep = @min(old.len, len) - header;
     @memcpy(@as([*]u8, @ptrCast(new_ptr))[0..keep], old[header..][0..keep]);
     allocator.rawFree(old, alignment, @returnAddress());
     return new_ptr;
 }
 
-pub fn free(ptr: ?*anyopaque) callconv(.c) void {
-    // A free outside a set/restore scope is a bug in our wrapper: the block would leak.
-    current.?.rawFree(block(ptr orelse return), alignment, @returnAddress());
+pub fn release(allocator: Allocator, ptr: ?*anyopaque) void {
+    allocator.rawFree(block(ptr orelse return), alignment, @returnAddress());
 }
 
 pub fn strdup(s: [*:0]const u8) callconv(.c) ?[*:0]u8 {

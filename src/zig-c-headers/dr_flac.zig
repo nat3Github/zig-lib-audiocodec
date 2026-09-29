@@ -1,9 +1,5 @@
-//! Hand-written bindings for dr_flac (dr_flac.h), stock config (stdio, wchar, Ogg, CRC compiled in,
+//! Hand-written bindings for dr_flac (dr_flac.h), built with DR_FLAC_NO_STDIO (module/build.zig, no file APIs); Ogg, CRC compiled in,
 //! DR_FLAC_BUFFER_SIZE 4096).
-
-const builtin = @import("builtin");
-
-pub const wchar_t = if (builtin.os.tag == .windows) u16 else i32;
 
 pub const DRFLAC_VERSION_MAJOR = 0;
 pub const DRFLAC_VERSION_MINOR = 13;
@@ -278,18 +274,11 @@ pub extern fn drflac_read_pcm_frames_s32(pFlac: *drflac, framesToRead: u64, pBuf
 pub extern fn drflac_read_pcm_frames_s16(pFlac: *drflac, framesToRead: u64, pBufferOut: ?[*]i16) u64;
 pub extern fn drflac_read_pcm_frames_f32(pFlac: *drflac, framesToRead: u64, pBufferOut: ?[*]f32) u64;
 pub extern fn drflac_seek_to_pcm_frame(pFlac: *drflac, pcmFrameIndex: u64) drflac_bool32;
-pub extern fn drflac_open_file(pFileName: [*:0]const u8, pAllocationCallbacks: ?*const drflac_allocation_callbacks) ?*drflac;
-pub extern fn drflac_open_file_w(pFileName: [*:0]const wchar_t, pAllocationCallbacks: ?*const drflac_allocation_callbacks) ?*drflac;
-pub extern fn drflac_open_file_with_metadata(pFileName: [*:0]const u8, onMeta: ?drflac_meta_proc, pUserData: ?*anyopaque, pAllocationCallbacks: ?*const drflac_allocation_callbacks) ?*drflac;
-pub extern fn drflac_open_file_with_metadata_w(pFileName: [*:0]const wchar_t, onMeta: ?drflac_meta_proc, pUserData: ?*anyopaque, pAllocationCallbacks: ?*const drflac_allocation_callbacks) ?*drflac;
 pub extern fn drflac_open_memory(pData: *const anyopaque, dataSize: usize, pAllocationCallbacks: ?*const drflac_allocation_callbacks) ?*drflac;
 pub extern fn drflac_open_memory_with_metadata(pData: *const anyopaque, dataSize: usize, onMeta: ?drflac_meta_proc, pUserData: ?*anyopaque, pAllocationCallbacks: ?*const drflac_allocation_callbacks) ?*drflac;
 pub extern fn drflac_open_and_read_pcm_frames_s32(onRead: drflac_read_proc, onSeek: ?drflac_seek_proc, onTell: ?drflac_tell_proc, pUserData: ?*anyopaque, channels: ?*c_uint, sampleRate: ?*c_uint, totalPCMFrameCount: ?*u64, pAllocationCallbacks: ?*const drflac_allocation_callbacks) ?[*]i32;
 pub extern fn drflac_open_and_read_pcm_frames_s16(onRead: drflac_read_proc, onSeek: ?drflac_seek_proc, onTell: ?drflac_tell_proc, pUserData: ?*anyopaque, channels: ?*c_uint, sampleRate: ?*c_uint, totalPCMFrameCount: ?*u64, pAllocationCallbacks: ?*const drflac_allocation_callbacks) ?[*]i16;
 pub extern fn drflac_open_and_read_pcm_frames_f32(onRead: drflac_read_proc, onSeek: ?drflac_seek_proc, onTell: ?drflac_tell_proc, pUserData: ?*anyopaque, channels: ?*c_uint, sampleRate: ?*c_uint, totalPCMFrameCount: ?*u64, pAllocationCallbacks: ?*const drflac_allocation_callbacks) ?[*]f32;
-pub extern fn drflac_open_file_and_read_pcm_frames_s32(filename: [*:0]const u8, channels: ?*c_uint, sampleRate: ?*c_uint, totalPCMFrameCount: ?*u64, pAllocationCallbacks: ?*const drflac_allocation_callbacks) ?[*]i32;
-pub extern fn drflac_open_file_and_read_pcm_frames_s16(filename: [*:0]const u8, channels: ?*c_uint, sampleRate: ?*c_uint, totalPCMFrameCount: ?*u64, pAllocationCallbacks: ?*const drflac_allocation_callbacks) ?[*]i16;
-pub extern fn drflac_open_file_and_read_pcm_frames_f32(filename: [*:0]const u8, channels: ?*c_uint, sampleRate: ?*c_uint, totalPCMFrameCount: ?*u64, pAllocationCallbacks: ?*const drflac_allocation_callbacks) ?[*]f32;
 pub extern fn drflac_open_memory_and_read_pcm_frames_s32(data: *const anyopaque, dataSize: usize, channels: ?*c_uint, sampleRate: ?*c_uint, totalPCMFrameCount: ?*u64, pAllocationCallbacks: ?*const drflac_allocation_callbacks) ?[*]i32;
 pub extern fn drflac_open_memory_and_read_pcm_frames_s16(data: *const anyopaque, dataSize: usize, channels: ?*c_uint, sampleRate: ?*c_uint, totalPCMFrameCount: ?*u64, pAllocationCallbacks: ?*const drflac_allocation_callbacks) ?[*]i16;
 pub extern fn drflac_open_memory_and_read_pcm_frames_f32(data: *const anyopaque, dataSize: usize, channels: ?*c_uint, sampleRate: ?*c_uint, totalPCMFrameCount: ?*u64, pAllocationCallbacks: ?*const drflac_allocation_callbacks) ?[*]f32;

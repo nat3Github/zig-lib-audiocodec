@@ -1,8 +1,4 @@
-//! Hand-written bindings for dr_wav (dr_wav.h), stock config (stdio, wchar and conversion API compiled in).
-
-const builtin = @import("builtin");
-
-pub const wchar_t = if (builtin.os.tag == .windows) u16 else i32;
+//! Hand-written bindings for dr_wav (dr_wav.h), built with DR_WAV_NO_STDIO (module/build.zig): no file APIs.
 
 pub const DRWAV_VERSION_MAJOR = 0;
 pub const DRWAV_VERSION_MINOR = 14;
@@ -422,19 +418,6 @@ pub extern fn drwav_f64_to_s32(pOut: [*]i32, pIn: [*]const f64, sampleCount: usi
 pub extern fn drwav_alaw_to_s32(pOut: [*]i32, pIn: [*]const u8, sampleCount: usize) void;
 pub extern fn drwav_mulaw_to_s32(pOut: [*]i32, pIn: [*]const u8, sampleCount: usize) void;
 
-pub extern fn drwav_init_file(pWav: *drwav, filename: [*:0]const u8, pAllocationCallbacks: ?*const drwav_allocation_callbacks) drwav_bool32;
-pub extern fn drwav_init_file_ex(pWav: *drwav, filename: [*:0]const u8, onChunk: ?drwav_chunk_proc, pChunkUserData: ?*anyopaque, flags: u32, pAllocationCallbacks: ?*const drwav_allocation_callbacks) drwav_bool32;
-pub extern fn drwav_init_file_w(pWav: *drwav, filename: [*:0]const wchar_t, pAllocationCallbacks: ?*const drwav_allocation_callbacks) drwav_bool32;
-pub extern fn drwav_init_file_ex_w(pWav: *drwav, filename: [*:0]const wchar_t, onChunk: ?drwav_chunk_proc, pChunkUserData: ?*anyopaque, flags: u32, pAllocationCallbacks: ?*const drwav_allocation_callbacks) drwav_bool32;
-pub extern fn drwav_init_file_with_metadata(pWav: *drwav, filename: [*:0]const u8, flags: u32, pAllocationCallbacks: ?*const drwav_allocation_callbacks) drwav_bool32;
-pub extern fn drwav_init_file_with_metadata_w(pWav: *drwav, filename: [*:0]const wchar_t, flags: u32, pAllocationCallbacks: ?*const drwav_allocation_callbacks) drwav_bool32;
-pub extern fn drwav_init_file_write(pWav: *drwav, filename: [*:0]const u8, pFormat: *const drwav_data_format, pAllocationCallbacks: ?*const drwav_allocation_callbacks) drwav_bool32;
-pub extern fn drwav_init_file_write_sequential(pWav: *drwav, filename: [*:0]const u8, pFormat: *const drwav_data_format, totalSampleCount: u64, pAllocationCallbacks: ?*const drwav_allocation_callbacks) drwav_bool32;
-pub extern fn drwav_init_file_write_sequential_pcm_frames(pWav: *drwav, filename: [*:0]const u8, pFormat: *const drwav_data_format, totalPCMFrameCount: u64, pAllocationCallbacks: ?*const drwav_allocation_callbacks) drwav_bool32;
-pub extern fn drwav_init_file_write_w(pWav: *drwav, filename: [*:0]const wchar_t, pFormat: *const drwav_data_format, pAllocationCallbacks: ?*const drwav_allocation_callbacks) drwav_bool32;
-pub extern fn drwav_init_file_write_sequential_w(pWav: *drwav, filename: [*:0]const wchar_t, pFormat: *const drwav_data_format, totalSampleCount: u64, pAllocationCallbacks: ?*const drwav_allocation_callbacks) drwav_bool32;
-pub extern fn drwav_init_file_write_sequential_pcm_frames_w(pWav: *drwav, filename: [*:0]const wchar_t, pFormat: *const drwav_data_format, totalPCMFrameCount: u64, pAllocationCallbacks: ?*const drwav_allocation_callbacks) drwav_bool32;
-
 pub extern fn drwav_init_memory(pWav: *drwav, data: *const anyopaque, dataSize: usize, pAllocationCallbacks: ?*const drwav_allocation_callbacks) drwav_bool32;
 pub extern fn drwav_init_memory_ex(pWav: *drwav, data: *const anyopaque, dataSize: usize, onChunk: ?drwav_chunk_proc, pChunkUserData: ?*anyopaque, flags: u32, pAllocationCallbacks: ?*const drwav_allocation_callbacks) drwav_bool32;
 pub extern fn drwav_init_memory_with_metadata(pWav: *drwav, data: *const anyopaque, dataSize: usize, flags: u32, pAllocationCallbacks: ?*const drwav_allocation_callbacks) drwav_bool32;
@@ -445,12 +428,6 @@ pub extern fn drwav_init_memory_write_sequential_pcm_frames(pWav: *drwav, ppData
 pub extern fn drwav_open_and_read_pcm_frames_s16(onRead: drwav_read_proc, onSeek: ?drwav_seek_proc, onTell: ?drwav_tell_proc, pUserData: ?*anyopaque, channelsOut: ?*c_uint, sampleRateOut: ?*c_uint, totalFrameCountOut: ?*u64, pAllocationCallbacks: ?*const drwav_allocation_callbacks) ?[*]i16;
 pub extern fn drwav_open_and_read_pcm_frames_f32(onRead: drwav_read_proc, onSeek: ?drwav_seek_proc, onTell: ?drwav_tell_proc, pUserData: ?*anyopaque, channelsOut: ?*c_uint, sampleRateOut: ?*c_uint, totalFrameCountOut: ?*u64, pAllocationCallbacks: ?*const drwav_allocation_callbacks) ?[*]f32;
 pub extern fn drwav_open_and_read_pcm_frames_s32(onRead: drwav_read_proc, onSeek: ?drwav_seek_proc, onTell: ?drwav_tell_proc, pUserData: ?*anyopaque, channelsOut: ?*c_uint, sampleRateOut: ?*c_uint, totalFrameCountOut: ?*u64, pAllocationCallbacks: ?*const drwav_allocation_callbacks) ?[*]i32;
-pub extern fn drwav_open_file_and_read_pcm_frames_s16(filename: [*:0]const u8, channelsOut: ?*c_uint, sampleRateOut: ?*c_uint, totalFrameCountOut: ?*u64, pAllocationCallbacks: ?*const drwav_allocation_callbacks) ?[*]i16;
-pub extern fn drwav_open_file_and_read_pcm_frames_f32(filename: [*:0]const u8, channelsOut: ?*c_uint, sampleRateOut: ?*c_uint, totalFrameCountOut: ?*u64, pAllocationCallbacks: ?*const drwav_allocation_callbacks) ?[*]f32;
-pub extern fn drwav_open_file_and_read_pcm_frames_s32(filename: [*:0]const u8, channelsOut: ?*c_uint, sampleRateOut: ?*c_uint, totalFrameCountOut: ?*u64, pAllocationCallbacks: ?*const drwav_allocation_callbacks) ?[*]i32;
-pub extern fn drwav_open_file_and_read_pcm_frames_s16_w(filename: [*:0]const wchar_t, channelsOut: ?*c_uint, sampleRateOut: ?*c_uint, totalFrameCountOut: ?*u64, pAllocationCallbacks: ?*const drwav_allocation_callbacks) ?[*]i16;
-pub extern fn drwav_open_file_and_read_pcm_frames_f32_w(filename: [*:0]const wchar_t, channelsOut: ?*c_uint, sampleRateOut: ?*c_uint, totalFrameCountOut: ?*u64, pAllocationCallbacks: ?*const drwav_allocation_callbacks) ?[*]f32;
-pub extern fn drwav_open_file_and_read_pcm_frames_s32_w(filename: [*:0]const wchar_t, channelsOut: ?*c_uint, sampleRateOut: ?*c_uint, totalFrameCountOut: ?*u64, pAllocationCallbacks: ?*const drwav_allocation_callbacks) ?[*]i32;
 pub extern fn drwav_open_memory_and_read_pcm_frames_s16(data: *const anyopaque, dataSize: usize, channelsOut: ?*c_uint, sampleRateOut: ?*c_uint, totalFrameCountOut: ?*u64, pAllocationCallbacks: ?*const drwav_allocation_callbacks) ?[*]i16;
 pub extern fn drwav_open_memory_and_read_pcm_frames_f32(data: *const anyopaque, dataSize: usize, channelsOut: ?*c_uint, sampleRateOut: ?*c_uint, totalFrameCountOut: ?*u64, pAllocationCallbacks: ?*const drwav_allocation_callbacks) ?[*]f32;
 pub extern fn drwav_open_memory_and_read_pcm_frames_s32(data: *const anyopaque, dataSize: usize, channelsOut: ?*c_uint, sampleRateOut: ?*c_uint, totalFrameCountOut: ?*u64, pAllocationCallbacks: ?*const drwav_allocation_callbacks) ?[*]i32;

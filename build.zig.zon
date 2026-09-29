@@ -29,8 +29,8 @@
             .hash = "flac-1.5.0-4bw_HTlNGgAZlmigso5u7apeilwGGTqksz11sZBtsCiZ",
         },
         .dr_libs = .{
-            .url = "git+https://github.com/nat3Github/c-lib-dr_libs#ae312150ba822fdf435b1f94ce6ba88122ab4925",
-            .hash = "dr_libs-0.0.0-w9Xb72kIEQB5fk4cvJN3IpPLr9T-jhMQx3XuE3eKP0Ks",
+            .url = "git+https://github.com/nat3Github/c-lib-dr_libs#d61120223c7db066f423050e26fc8bba76e1ae10",
+            .hash = "dr_libs-0.0.0-w9Xb7ykQEQDDfidgCSQxjyoBTXY82BKQRhBKKBTzl6r5",
         },
         .minimp4 = .{
             .url = "git+https://github.com/nat3Github/c-lib-minimp4#28a31d7e5f005b28399a83c0e741d2dfa2e13906",
@@ -55,7 +55,9 @@
         "src/c.zig",
         "src/c_allocator.zig",
         "src/flac.zig",
+        "src/id3.zig",
         "src/libc.zig",
+        "src/mp3.zig",
         "src/ogg.zig",
         "src/opus.zig",
         "src/pcm.zig",

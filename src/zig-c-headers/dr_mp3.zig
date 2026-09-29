@@ -1,8 +1,5 @@
-//! Hand-written bindings for dr_mp3 (dr_mp3.h), stock config (stdio and wchar compiled in).
-
-const builtin = @import("builtin");
-
-pub const wchar_t = if (builtin.os.tag == .windows) u16 else i32;
+//! Hand-written bindings for dr_mp3 (dr_mp3.h), built with DR_MP3_NO_STDIO and DR_MP3_FLOAT_OUTPUT
+//! (module/build.zig): no file APIs, the decoder's native output is f32.
 
 pub const DRMP3_VERSION_MAJOR = 0;
 pub const DRMP3_VERSION_MINOR = 7;
@@ -201,6 +198,7 @@ pub const drmp3 = extern struct {
     seekPointCount: u32,
     delayInPCMFrames: u32,
     paddingInPCMFrames: u32,
+    mp3FramesSkipped: u32,
     totalPCMFrameCount: u64,
     isVBR: drmp3_bool32,
     isCBR: drmp3_bool32,
@@ -219,10 +217,6 @@ pub const drmp3 = extern struct {
 pub extern fn drmp3_init(pMP3: *drmp3, onRead: drmp3_read_proc, onSeek: ?drmp3_seek_proc, onTell: ?drmp3_tell_proc, onMeta: ?drmp3_meta_proc, pUserData: ?*anyopaque, pAllocationCallbacks: ?*const drmp3_allocation_callbacks) drmp3_bool32;
 pub extern fn drmp3_init_memory_with_metadata(pMP3: *drmp3, pData: *const anyopaque, dataSize: usize, onMeta: ?drmp3_meta_proc, pUserDataMeta: ?*anyopaque, pAllocationCallbacks: ?*const drmp3_allocation_callbacks) drmp3_bool32;
 pub extern fn drmp3_init_memory(pMP3: *drmp3, pData: *const anyopaque, dataSize: usize, pAllocationCallbacks: ?*const drmp3_allocation_callbacks) drmp3_bool32;
-pub extern fn drmp3_init_file_with_metadata(pMP3: *drmp3, pFilePath: [*:0]const u8, onMeta: ?drmp3_meta_proc, pUserDataMeta: ?*anyopaque, pAllocationCallbacks: ?*const drmp3_allocation_callbacks) drmp3_bool32;
-pub extern fn drmp3_init_file_with_metadata_w(pMP3: *drmp3, pFilePath: [*:0]const wchar_t, onMeta: ?drmp3_meta_proc, pUserDataMeta: ?*anyopaque, pAllocationCallbacks: ?*const drmp3_allocation_callbacks) drmp3_bool32;
-pub extern fn drmp3_init_file(pMP3: *drmp3, pFilePath: [*:0]const u8, pAllocationCallbacks: ?*const drmp3_allocation_callbacks) drmp3_bool32;
-pub extern fn drmp3_init_file_w(pMP3: *drmp3, pFilePath: [*:0]const wchar_t, pAllocationCallbacks: ?*const drmp3_allocation_callbacks) drmp3_bool32;
 pub extern fn drmp3_uninit(pMP3: *drmp3) void;
 pub extern fn drmp3_read_pcm_frames_f32(pMP3: *drmp3, framesToRead: u64, pBufferOut: ?[*]f32) u64;
 pub extern fn drmp3_read_pcm_frames_s16(pMP3: *drmp3, framesToRead: u64, pBufferOut: ?[*]i16) u64;
@@ -236,7 +230,5 @@ pub extern fn drmp3_open_and_read_pcm_frames_f32(onRead: drmp3_read_proc, onSeek
 pub extern fn drmp3_open_and_read_pcm_frames_s16(onRead: drmp3_read_proc, onSeek: ?drmp3_seek_proc, onTell: ?drmp3_tell_proc, pUserData: ?*anyopaque, pConfig: ?*drmp3_config, pTotalFrameCount: ?*u64, pAllocationCallbacks: ?*const drmp3_allocation_callbacks) ?[*]i16;
 pub extern fn drmp3_open_memory_and_read_pcm_frames_f32(pData: *const anyopaque, dataSize: usize, pConfig: ?*drmp3_config, pTotalFrameCount: ?*u64, pAllocationCallbacks: ?*const drmp3_allocation_callbacks) ?[*]f32;
 pub extern fn drmp3_open_memory_and_read_pcm_frames_s16(pData: *const anyopaque, dataSize: usize, pConfig: ?*drmp3_config, pTotalFrameCount: ?*u64, pAllocationCallbacks: ?*const drmp3_allocation_callbacks) ?[*]i16;
-pub extern fn drmp3_open_file_and_read_pcm_frames_f32(filePath: [*:0]const u8, pConfig: ?*drmp3_config, pTotalFrameCount: ?*u64, pAllocationCallbacks: ?*const drmp3_allocation_callbacks) ?[*]f32;
-pub extern fn drmp3_open_file_and_read_pcm_frames_s16(filePath: [*:0]const u8, pConfig: ?*drmp3_config, pTotalFrameCount: ?*u64, pAllocationCallbacks: ?*const drmp3_allocation_callbacks) ?[*]i16;
 pub extern fn drmp3_malloc(sz: usize, pAllocationCallbacks: ?*const drmp3_allocation_callbacks) ?*anyopaque;
 pub extern fn drmp3_free(p: ?*anyopaque, pAllocationCallbacks: ?*const drmp3_allocation_callbacks) void;

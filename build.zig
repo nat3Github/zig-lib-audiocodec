@@ -30,7 +30,8 @@ pub fn build(b: *std.Build) void {
         .{ "opusenc", .{"opusenc"}, args },
         .{ "opusfile", .{"opusfile"}, args },
         .{ "flac", .{"FLAC"}, .{ .target = target, .optimize = optimize, .libc_include = libc_include, .threads = false } },
-        .{ "dr_libs", .{ "dr_mp3", "dr_wav", "dr_flac" }, args },
+        // dr_mp3 decodes to f32 natively; sample.zig does every other conversion (its f32 -> s16 truncates).
+        .{ "dr_libs", .{ "dr_mp3", "dr_wav", "dr_flac" }, .{ .target = target, .optimize = optimize, .libc_include = libc_include, .no_stdio = true, .mp3_float_output = true } },
         .{ "minimp4", .{"minimp4"}, args },
         .{ "fdk_aac", .{"fdk-aac"}, args },
         .{ "alac", .{"alac"}, args },
