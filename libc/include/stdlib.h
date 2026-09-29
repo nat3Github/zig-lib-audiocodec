@@ -1,12 +1,16 @@
 #ifndef AVC_STDLIB_H
 #define AVC_STDLIB_H
 #include "_avc.h"
-/* No malloc & co.: every lib allocates through its allocator hook. */
 #define EXIT_SUCCESS 0
 #define EXIT_FAILURE 1
 #define RAND_MAX 0x7fffffff
 #define alloca __builtin_alloca
 AVC_BEGIN
+/* src/c_allocator.zig: the Zig allocator of the current Decoder/Encoder call */
+void *malloc(size_t) AVC_SYM(malloc);
+void *calloc(size_t, size_t) AVC_SYM(calloc);
+void *realloc(void *, size_t) AVC_SYM(realloc);
+void free(void *) AVC_SYM(free);
 void qsort(void *, size_t, size_t, int (*)(const void *, const void *)) AVC_SYM(qsort);
 double strtod(const char *, char **) AVC_SYM(strtod);
 long strtol(const char *, char **, int) AVC_SYM(strtol);

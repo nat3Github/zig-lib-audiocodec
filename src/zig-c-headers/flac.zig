@@ -731,13 +731,3 @@ pub extern fn FLAC__metadata_object_picture_set_data(object: *FLAC__StreamMetada
 pub extern fn FLAC__metadata_object_picture_is_legal(object: *const FLAC__StreamMetadata, violation: ?*[*:0]const u8) FLAC__bool;
 pub extern fn FLAC__metadata_object_get_raw(object: *const FLAC__StreamMetadata) ?[*]FLAC__byte;
 pub extern fn FLAC__metadata_object_set_raw(buffer: [*]FLAC__byte, length: u32) ?*FLAC__StreamMetadata;
-
-/// zig fork: allocator hook. `realloc(ctx, null, n)` must act like alloc; free never gets null.
-pub const FLAC__Allocator = extern struct {
-    ctx: ?*anyopaque,
-    alloc: *const fn (ctx: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque,
-    realloc: *const fn (ctx: ?*anyopaque, ptr: ?*anyopaque, new_size: usize) callconv(.c) ?*anyopaque,
-    free: *const fn (ctx: ?*anyopaque, ptr: ?*anyopaque) callconv(.c) void,
-};
-/// null restores the default (libc, or null-returning stubs in the module build).
-pub extern fn FLAC__set_allocator(allocator: ?*const FLAC__Allocator) void;

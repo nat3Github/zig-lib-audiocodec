@@ -5,7 +5,7 @@ const Allocator = std.mem.Allocator;
 
 pub const alac = @import("alac.zig");
 pub const c_allocator = @import("c_allocator.zig");
-pub const c = c_allocator.c;
+pub const c = @import("c.zig");
 pub const sample = @import("sample.zig");
 pub const sniff = @import("sniff.zig").sniff;
 

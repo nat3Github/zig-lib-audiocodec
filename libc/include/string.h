@@ -21,5 +21,6 @@ char *strncpy(char *, const char *, size_t) AVC_SYM(strncpy);
 char *strcat(char *, const char *) AVC_SYM(strcat);
 char *strncat(char *, const char *, size_t) AVC_SYM(strncat);
 char *strerror(int) AVC_SYM(strerror);
+char *strdup(const char *) AVC_SYM(strdup); /* src/c_allocator.zig */
 AVC_END
 #endif

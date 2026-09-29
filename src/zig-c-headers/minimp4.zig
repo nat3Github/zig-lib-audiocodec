@@ -169,13 +169,3 @@ pub extern fn MP4E_set_vps(mux: *MP4E_mux_t, track_id: c_int, vps: *const anyopa
 pub extern fn MP4E_set_sps(mux: *MP4E_mux_t, track_id: c_int, sps: *const anyopaque, bytes: c_int) c_int;
 pub extern fn MP4E_set_pps(mux: *MP4E_mux_t, track_id: c_int, pps: *const anyopaque, bytes: c_int) c_int;
 pub extern fn MP4E_set_text_comment(mux: *MP4E_mux_t, comment: ?[*:0]const u8) c_int;
-
-/// zig fork: allocator hook. `realloc(ctx, null, n)` must act like alloc; free never gets null.
-pub const minimp4_allocator = extern struct {
-    ctx: ?*anyopaque,
-    alloc: *const fn (ctx: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque,
-    realloc: *const fn (ctx: ?*anyopaque, ptr: ?*anyopaque, new_size: usize) callconv(.c) ?*anyopaque,
-    free: *const fn (ctx: ?*anyopaque, ptr: ?*anyopaque) callconv(.c) void,
-};
-/// null restores the default (libc, or null-returning stubs in the module build).
-pub extern fn minimp4_set_allocator(allocator: ?*const minimp4_allocator) void;

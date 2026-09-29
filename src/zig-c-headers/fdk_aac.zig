@@ -476,13 +476,3 @@ pub extern fn aacEncInfo(hAacEncoder: HANDLE_AACENCODER, pInfo: *AACENC_InfoStru
 pub extern fn aacEncoder_SetParam(hAacEncoder: HANDLE_AACENCODER, param: AACENC_PARAM, value: UINT) AACENC_ERROR;
 pub extern fn aacEncoder_GetParam(hAacEncoder: HANDLE_AACENCODER, param: AACENC_PARAM) UINT;
 pub extern fn aacEncGetLibInfo(info: *[FDK_MODULE_LAST]LIB_INFO) AACENC_ERROR;
-
-/// zig fork: allocator hook. `realloc(ctx, null, n)` must act like alloc; free never gets null.
-pub const fdk_allocator = extern struct {
-    ctx: ?*anyopaque,
-    alloc: *const fn (ctx: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque,
-    realloc: *const fn (ctx: ?*anyopaque, ptr: ?*anyopaque, new_size: usize) callconv(.c) ?*anyopaque,
-    free: *const fn (ctx: ?*anyopaque, ptr: ?*anyopaque) callconv(.c) void,
-};
-/// null restores the default (libc, or null-returning stubs in the module build).
-pub extern fn fdk_set_allocator(allocator: ?*const fdk_allocator) void;

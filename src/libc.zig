@@ -3,12 +3,14 @@
 //! Declared in libc/include/*.h. Functions compiler_rt already exports (mem*, strlen, sin, cos,
 //! exp, log, floor, sqrt, ...) keep their names; everything else is exported as `avc_<name>`
 //! (the headers map the C name with an asm label), so it never clashes with a real libc linked
-//! into the same program. The printf family is in libc/printf.c.
+//! into the same program. malloc & co. come from c_allocator.zig. The printf family is in
+//! libc/printf.c.
 //! There is no file system: FILE / fd / stat functions fail with ENOSYS. The libs are only used
 //! through their callback and memory APIs.
 
 const std = @import("std");
 const builtin = @import("builtin");
+const c_allocator = @import("c_allocator.zig");
 
 comptime {
     for (@typeInfo(exports).@"struct".decls) |decl| {
@@ -56,6 +58,13 @@ fn isSpace(c: u8) bool {
 
 /// Everything exported as avc_<decl name>. Public so test/nm_check.zig can list the names.
 pub const exports = struct {
+    // stdlib.h / string.h allocation, backed by the threadlocal allocator of c_allocator.zig
+    pub const malloc = c_allocator.malloc;
+    pub const calloc = c_allocator.calloc;
+    pub const realloc = c_allocator.realloc;
+    pub const free = c_allocator.free;
+    pub const strdup = c_allocator.strdup;
+
     // errno.h, assert.h, stdlib.h process control
     pub fn errno_location() callconv(.c) *c_int {
         return &errno_value;

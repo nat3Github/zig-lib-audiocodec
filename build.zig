@@ -19,21 +19,21 @@ pub fn build(b: *std.Build) void {
 
     // Every vendor artifact is installed so dependents (test/) reach them via
     // `dependency("audiocodec", ...).artifact(name)` instead of pinning them again.
-    // libc_alloc = false: the C libs' default allocator hooks return NULL instead of calling
-    // malloc; src/c_allocator.zig installs the real hooks. flac threads = false: encoder
-    // worker threads would allocate outside the calling thread's allocator.
-    const hooked = .{ .target = target, .optimize = optimize, .libc_alloc = false, .libc_include = libc_include };
+    // Their malloc & co. resolve to avc_malloc ... (libc/include/stdlib.h, src/c_allocator.zig).
+    // flac threads = false: encoder worker threads would allocate outside the calling thread's
+    // allocator.
+    const args = .{ .target = target, .optimize = optimize, .libc_include = libc_include };
     const vendored = .{
-        .{ "ogg", .{"ogg"}, hooked },
-        .{ "vorbis", .{"vorbis"}, hooked },
-        .{ "opus", .{"opus"}, hooked },
-        .{ "opusenc", .{"opusenc"}, hooked },
-        .{ "opusfile", .{"opusfile"}, hooked },
-        .{ "flac", .{"FLAC"}, .{ .target = target, .optimize = optimize, .libc_alloc = false, .libc_include = libc_include, .threads = false } },
-        .{ "dr_libs", .{ "dr_mp3", "dr_wav", "dr_flac" }, hooked },
-        .{ "minimp4", .{"minimp4"}, hooked },
-        .{ "fdk_aac", .{"fdk-aac"}, hooked },
-        .{ "alac", .{"alac"}, .{ .target = target, .optimize = optimize, .libc_include = libc_include } },
+        .{ "ogg", .{"ogg"}, args },
+        .{ "vorbis", .{"vorbis"}, args },
+        .{ "opus", .{"opus"}, args },
+        .{ "opusenc", .{"opusenc"}, args },
+        .{ "opusfile", .{"opusfile"}, args },
+        .{ "flac", .{"FLAC"}, .{ .target = target, .optimize = optimize, .libc_include = libc_include, .threads = false } },
+        .{ "dr_libs", .{ "dr_mp3", "dr_wav", "dr_flac" }, args },
+        .{ "minimp4", .{"minimp4"}, args },
+        .{ "fdk_aac", .{"fdk-aac"}, args },
+        .{ "alac", .{"alac"}, args },
     };
     inline for (vendored) |v| {
         const dep = b.dependency(v[0], v[2]);

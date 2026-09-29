@@ -5,40 +5,40 @@
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .ogg = .{
-            .url = "git+https://github.com/nat3Github/c-lib-ogg#e05a6eb3fa88552aa1a3ad7ae80f94e701ce6a65",
-            .hash = "ogg-1.3.6-VNQSgvYmAgCwqPNyUM1pkQ8uzC-_TDA_hggk7zoQwBb7",
+            .url = "git+https://github.com/nat3Github/c-lib-ogg#5cf65748a2c4c54992014ba1c0ac7fb8accc56a9",
+            .hash = "ogg-1.3.6-VNQSghwdAgDSyq-1W7Jcpawz6k3tz_LS4RTXHe3kAec0",
         },
         .vorbis = .{
-            .url = "git+https://github.com/nat3Github/c-lib-vorbis#56d038f93428e124baaaf26378398b4aa5673725",
-            .hash = "vorbis-1.3.7-5VeZqdl7IQB2LH15TTYzKavVhbFNp20ac-30q9zL166L",
+            .url = "git+https://github.com/nat3Github/c-lib-vorbis#60016bc2930608b465e0eb4ef55e9028fc525842",
+            .hash = "vorbis-1.3.7-5VeZqR17IQCk7gMN5GzmFqfbXIrD-mj8kXhFtqgTSyDb",
         },
         .opus = .{
-            .url = "git+https://github.com/nat3Github/c-lib-opus#3f85bad2b69a6cee36f7fe0fb2c16aa9452fd1aa",
-            .hash = "opus-1.6.1-PWTqXQW2MgCpH0J6i3JTnMAljTU7-KLZ86uBcgjyNHVk",
+            .url = "git+https://github.com/nat3Github/c-lib-opus#808bcd92c46580b39e97bed3e38d8e9bcea67bc3",
+            .hash = "opus-1.6.1-PWTqXUatMgCPY-AEkCjGnWio7pjsJLsbNF7Y2fQyUBJK",
         },
         .opusenc = .{
-            .url = "git+https://github.com/nat3Github/c-lib-opusenc#a23aede930a0ac026ef7b83cfa02c59efdf0b753",
-            .hash = "opusenc-0.3.0-ZjOtJx8KAwCuV2gNAVDKMejJbXVeOg_O4l2T9JUx2TtQ",
+            .url = "git+https://github.com/nat3Github/c-lib-opusenc#fa6643b1314f58af69121a262098287c3f4b2c4f",
+            .hash = "opusenc-0.3.0-ZjOtJ1_-AgDAB8C3rqOGCFQtDlLPm93g-q7ekF3HSUtt",
         },
         .opusfile = .{
-            .url = "git+https://github.com/nat3Github/c-lib-opusfile#2736a236d2b922b734de68120da4df620ccb4a27",
-            .hash = "opusfile-0.12.0-zqaoSGSZBABXH_0ghMKySufgbTBUDpPx5KaqB3pUIAby",
+            .url = "git+https://github.com/nat3Github/c-lib-opusfile#77d2bdad82aa3bcc1d36d24adfadf67e546093d8",
+            .hash = "opusfile-0.12.0-zqaoSKyYBAC0hDbpKV_3dnj9AgUMfQaKp_LrU8kO1SEV",
         },
         .flac = .{
-            .url = "git+https://github.com/nat3Github/c-lib-flac#a879cf529d005bf0294fed25aa39320657ca8ba9",
-            .hash = "flac-1.5.0-4bw_HQ5dGgAgoBa2UNLFallfmUnpMWbkFHHzBuIhRbr8",
+            .url = "git+https://github.com/nat3Github/c-lib-flac#b36e50ce92fa8abe83b8649dc70b8bd8cb375ed2",
+            .hash = "flac-1.5.0-4bw_HTlNGgAZlmigso5u7apeilwGGTqksz11sZBtsCiZ",
         },
         .dr_libs = .{
-            .url = "git+https://github.com/nat3Github/c-lib-dr_libs#34094538863eb3a87f3d150d9f2342560ea94905",
-            .hash = "dr_libs-0.0.0-w9Xb788KEQDMpHburSg6V1lWWiuuSkeWB3BxxS463Ogi",
+            .url = "git+https://github.com/nat3Github/c-lib-dr_libs#ae312150ba822fdf435b1f94ce6ba88122ab4925",
+            .hash = "dr_libs-0.0.0-w9Xb72kIEQB5fk4cvJN3IpPLr9T-jhMQx3XuE3eKP0Ks",
         },
         .minimp4 = .{
-            .url = "git+https://github.com/nat3Github/c-lib-minimp4#5bf103e35767f1e6494ee63706c0c73997fcb851",
-            .hash = "minimp4-0.0.0-Ysmi4e5BAgCXHk9HlqG2tazxjArEuXR6Ua-oU0NuNeGK",
+            .url = "git+https://github.com/nat3Github/c-lib-minimp4#28a31d7e5f005b28399a83c0e741d2dfa2e13906",
+            .hash = "minimp4-0.0.0-Ysmi4RtGAgCpcKqV2pJLj5-9XMphKfoXnVM9PgS-Qi9D",
         },
         .fdk_aac = .{
-            .url = "git+https://github.com/nat3Github/cpp-lib-fdk-aac#58f5cb74e2c196f0f308b92df500f146b7b89feb",
-            .hash = "fdk_aac-2.0.3-XEQX47bEhQB_Z_xDQD8wgJ__4OalRusGHmKBCcfrt81U",
+            .url = "git+https://github.com/nat3Github/cpp-lib-fdk-aac#0452d0fda36a725195ea9e7c32dd3a063c13c128",
+            .hash = "fdk_aac-2.0.3-XEQX44e9hQANaZqb2r_83l6P0qXlzJ__gqJ8v5YHs7Ey",
         },
         .alac = .{
             .url = "git+https://github.com/nat3Github/cpp-lib-alac#c742c5d3f0ebcafc26ed2d9507000b5ba1d1c12a",
@@ -52,6 +52,7 @@
         "README.md",
         "src/aiff.zig",
         "src/alac.zig",
+        "src/c.zig",
         "src/c_allocator.zig",
         "src/flac.zig",
         "src/libc.zig",
