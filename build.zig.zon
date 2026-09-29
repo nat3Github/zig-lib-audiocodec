@@ -33,8 +33,8 @@
             .hash = "dr_libs-0.0.0-w9Xb7ykQEQDDfidgCSQxjyoBTXY82BKQRhBKKBTzl6r5",
         },
         .minimp4 = .{
-            .url = "git+https://github.com/nat3Github/c-lib-minimp4#28a31d7e5f005b28399a83c0e741d2dfa2e13906",
-            .hash = "minimp4-0.0.0-Ysmi4RtGAgCpcKqV2pJLj5-9XMphKfoXnVM9PgS-Qi9D",
+            .url = "git+https://github.com/nat3Github/c-lib-minimp4#4b0c6f8866884959d19f9fd4163478d2e631c686",
+            .hash = "minimp4-0.0.0-Ysmi4QdVAgDPrA4gnx9nZObrBNICJVkRLcaTI537MIXR",
         },
         .fdk_aac = .{
             .url = "git+https://github.com/nat3Github/cpp-lib-fdk-aac#0452d0fda36a725195ea9e7c32dd3a063c13c128",

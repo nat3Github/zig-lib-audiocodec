@@ -44,6 +44,7 @@ pub const track_media_kind_t = c_uint;
 pub const e_audio: track_media_kind_t = 0;
 pub const e_video: track_media_kind_t = 1;
 pub const e_private: track_media_kind_t = 2;
+pub const e_audio_pcm: track_media_kind_t = 3;
 
 pub const MP4E_track_t = extern struct {
     object_type_indication: c_uint,
