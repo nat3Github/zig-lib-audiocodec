@@ -8,17 +8,37 @@
 //! ponytail: no C worker threads may allocate (the module builds libFLAC without pthreads).
 
 const std = @import("std");
-const c = @import("c.zig");
+
+pub const c = struct {
+    pub const ogg = @import("zig-c-headers/ogg.zig");
+    pub const vorbis = @import("zig-c-headers/vorbis.zig");
+    pub const opus = @import("zig-c-headers/opus.zig");
+    pub const opusenc = @import("zig-c-headers/opusenc.zig");
+    pub const opusfile = @import("zig-c-headers/opusfile.zig");
+    pub const flac = @import("zig-c-headers/flac.zig");
+    pub const minimp4 = @import("zig-c-headers/minimp4.zig");
+    pub const dr_wav = @import("zig-c-headers/dr_wav.zig");
+    pub const dr_mp3 = @import("zig-c-headers/dr_mp3.zig");
+    pub const dr_flac = @import("zig-c-headers/dr_flac.zig");
+    pub const fdk_aac = @import("zig-c-headers/fdk_aac.zig");
+    pub const alac = @import("zig-c-headers/alac.zig");
+};
 
 const Allocator = std.mem.Allocator;
 
 threadlocal var current: ?Allocator = null;
+
+/// True once a C allocation on this thread returned NULL since the last `set`. Some C code can
+/// only report that as a generic error or even swallows it (libvorbis); backends check this after
+/// the call and return error.OutOfMemory.
+pub threadlocal var failed: bool = false;
 
 /// Makes `allocator` receive this thread's C allocations; returns the previous one for `restore`.
 pub fn set(allocator: Allocator) ?Allocator {
     install();
     const prev = current;
     current = allocator;
+    failed = false;
     return prev;
 }
 
@@ -42,18 +62,23 @@ fn finish(base: [*]u8, size: usize) *anyopaque {
     return base + header;
 }
 
+fn oom() ?*anyopaque {
+    failed = true;
+    return null;
+}
+
 fn alloc(_: ?*anyopaque, size: usize) callconv(.c) ?*anyopaque {
-    const allocator = current orelse return null;
-    const len = std.math.add(usize, size, header) catch return null;
-    const base = allocator.rawAlloc(len, alignment, @returnAddress()) orelse return null;
+    const allocator = current orelse return oom();
+    const len = std.math.add(usize, size, header) catch return oom();
+    const base = allocator.rawAlloc(len, alignment, @returnAddress()) orelse return oom();
     return finish(base, size);
 }
 
 fn realloc(ctx: ?*anyopaque, ptr: ?*anyopaque, new_size: usize) callconv(.c) ?*anyopaque {
     const old_ptr = ptr orelse return alloc(ctx, new_size);
-    const allocator = current orelse return null;
+    const allocator = current orelse return oom();
     const old = block(old_ptr);
-    const len = std.math.add(usize, new_size, header) catch return null;
+    const len = std.math.add(usize, new_size, header) catch return oom();
     if (allocator.rawRemap(old, alignment, len, @returnAddress())) |base| return finish(base, new_size);
     const new_ptr = alloc(ctx, new_size) orelse return null;
     const keep = @min(old.len, len) - header;
