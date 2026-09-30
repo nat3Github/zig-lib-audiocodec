@@ -17,6 +17,9 @@ pub fn build(b: *std.Build) void {
     mod.addIncludePath(libc_include);
     mod.addCSourceFile(.{ .file = b.path("libc/printf.c") });
 
+    // Pure Zig (src/resample.zig), untouched by the libc work.
+    mod.addImport("r8brain", b.dependency("r8brain", .{ .target = target, .optimize = optimize }).module("r8brain"));
+
     // Every vendor artifact is installed so dependents (test/) reach them via
     // `dependency("audiocodec", ...).artifact(name)` instead of pinning them again.
     // Their malloc & co. resolve to avc_malloc ... (libc/include/stdlib.h, src/c_allocator.zig).

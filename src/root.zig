@@ -8,6 +8,7 @@ pub const c_allocator = @import("c_allocator.zig");
 pub const c = @import("c.zig");
 pub const sample = @import("sample.zig");
 pub const sniff = @import("sniff.zig").sniff;
+pub const Resampler = @import("resample.zig").Resampler;
 
 const pcm = @import("pcm.zig");
 const wav = @import("wav.zig");

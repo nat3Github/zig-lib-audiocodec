@@ -44,6 +44,10 @@
             .url = "git+https://github.com/nat3Github/cpp-lib-alac#c742c5d3f0ebcafc26ed2d9507000b5ba1d1c12a",
             .hash = "alac-0.0.0-ITKurBynAQCQDqOdrlVMKGJsZg0V6y5ItNPKhjSW2a15",
         },
+        .r8brain = .{
+            .url = "git+https://github.com/nat3Github/zig-lib-zr8brain#4c78024a66c62437e070121858ac6b37cb002fb6",
+            .hash = "r8brain-0.1.0-mmgL3TJyAgCO-aDIGx7ayCQfvfn4brwhxqf_0TmKJz5_",
+        },
     },
     .paths = .{
         "build.zig",
@@ -63,6 +67,7 @@
         "src/opus.zig",
         "src/pcm.zig",
         "libc",
+        "src/resample.zig",
         "src/root.zig",
         "src/sample.zig",
         "src/sniff.zig",
