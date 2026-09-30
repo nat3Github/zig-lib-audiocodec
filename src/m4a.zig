@@ -24,6 +24,12 @@ const aac = @import("aac.zig");
 const id3 = @import("id3.zig");
 const c_allocator = @import("c_allocator.zig");
 const c = @import("zig-c-headers/minimp4.zig");
+const build_options = @import("build_options");
+
+/// A codec left out of the build (-Daac=false / -Dalac=false): never active, see root.zig.
+fn On(comptime on: bool, comptime T: type) type {
+    return if (on) T else noreturn;
+}
 
 const Allocator = std.mem.Allocator;
 const Error = root.Error;
@@ -266,9 +272,9 @@ fn headerError(err: std.Io.Reader.Error) Error {
 
 /// ilst item atoms <-> normalized keys. 0xA9 is the (c) sign of the iTunes atoms.
 const text_atoms = [_]struct { *const [4]u8, []const u8 }{
-    .{ "\xa9nam", "title" },    .{ "\xa9ART", "artist" },   .{ "\xa9alb", "album" },
+    .{ "\xa9nam", "title" },     .{ "\xa9ART", "artist" },   .{ "\xa9alb", "album" },
     .{ "aART", "album_artist" }, .{ "\xa9day", "date" },     .{ "\xa9gen", "genre" },
-    .{ "\xa9cmt", "comment" },  .{ "\xa9wrt", "composer" }, .{ "cprt", "copyright" },
+    .{ "\xa9cmt", "comment" },   .{ "\xa9wrt", "composer" }, .{ "cprt", "copyright" },
     .{ "\xa9too", "encoder" },
 };
 
@@ -505,8 +511,8 @@ pub const Decoder = struct {
     state: *State,
 
     const Codec = union(enum) {
-        alac: alac.Decoder,
-        aac: aac.Codec,
+        alac: On(build_options.alac, alac.Decoder),
+        aac: On(build_options.aac, aac.Codec),
     };
 
     const State = struct {
@@ -633,6 +639,7 @@ pub const Decoder = struct {
         // The codec: output format, scale, pcm buffer. AAC decodes the first packet here.
         var first_frames: ?usize = null;
         if (is_alac) {
+            if (!build_options.alac) return error.UnsupportedFormat;
             const cookie = alac.Decoder.unwrap(track.cookie); // the bytes init reads
             if (cookie.len < 24) return error.InvalidFile;
             const channels = cookie[9];
@@ -665,6 +672,7 @@ pub const Decoder = struct {
                 => {},
                 else => return error.UnsupportedFormat,
             }
+            if (!build_options.aac) return error.UnsupportedFormat;
             const dsi = (tr.dsi orelse return error.InvalidFile)[0..tr.dsi_bytes];
             s.codec = .{ .aac = try aac.Codec.open(gpa, dsi) };
             errdefer s.deinitCodec();
@@ -913,7 +921,7 @@ pub const Encoder = struct {
         writer: *std.Io.Writer,
         seeker: Seeker,
         mux: ?*c.MP4E_mux_t = null,
-        codec: union(enum) { alac: Alac, aac: Aac },
+        codec: union(enum) { alac: On(build_options.alac, Alac), aac: On(build_options.aac, Aac) },
         channels: u16,
         rate: u32,
         udta: []u8 = &.{},
@@ -1097,8 +1105,10 @@ pub const Encoder = struct {
             .codec = undefined,
         };
         if (is_aac) {
+            if (!build_options.aac) return error.UnsupportedFormat;
             s.codec = .{ .aac = .{ .enc = try aac.Enc.open(gpa, options, false) } };
         } else {
+            if (!build_options.alac) return error.UnsupportedFormat;
             s.codec = .{ .alac = try openAlac(gpa, options) };
         }
         errdefer deinitCodec(s);

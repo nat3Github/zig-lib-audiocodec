@@ -7,42 +7,52 @@
         .ogg = .{
             .url = "git+https://github.com/nat3Github/c-lib-ogg#5cf65748a2c4c54992014ba1c0ac7fb8accc56a9",
             .hash = "ogg-1.3.6-VNQSghwdAgDSyq-1W7Jcpawz6k3tz_LS4RTXHe3kAec0",
+            .lazy = true,
         },
         .vorbis = .{
             .url = "git+https://github.com/nat3Github/c-lib-vorbis#60016bc2930608b465e0eb4ef55e9028fc525842",
             .hash = "vorbis-1.3.7-5VeZqR17IQCk7gMN5GzmFqfbXIrD-mj8kXhFtqgTSyDb",
+            .lazy = true,
         },
         .opus = .{
             .url = "git+https://github.com/nat3Github/c-lib-opus#808bcd92c46580b39e97bed3e38d8e9bcea67bc3",
             .hash = "opus-1.6.1-PWTqXUatMgCPY-AEkCjGnWio7pjsJLsbNF7Y2fQyUBJK",
+            .lazy = true,
         },
         .opusenc = .{
             .url = "git+https://github.com/nat3Github/c-lib-opusenc#fa6643b1314f58af69121a262098287c3f4b2c4f",
             .hash = "opusenc-0.3.0-ZjOtJ1_-AgDAB8C3rqOGCFQtDlLPm93g-q7ekF3HSUtt",
+            .lazy = true,
         },
         .opusfile = .{
             .url = "git+https://github.com/nat3Github/c-lib-opusfile#77d2bdad82aa3bcc1d36d24adfadf67e546093d8",
             .hash = "opusfile-0.12.0-zqaoSKyYBAC0hDbpKV_3dnj9AgUMfQaKp_LrU8kO1SEV",
+            .lazy = true,
         },
         .flac = .{
             .url = "git+https://github.com/nat3Github/c-lib-flac#b36e50ce92fa8abe83b8649dc70b8bd8cb375ed2",
             .hash = "flac-1.5.0-4bw_HTlNGgAZlmigso5u7apeilwGGTqksz11sZBtsCiZ",
+            .lazy = true,
         },
         .dr_libs = .{
             .url = "git+https://github.com/nat3Github/c-lib-dr_libs#d61120223c7db066f423050e26fc8bba76e1ae10",
             .hash = "dr_libs-0.0.0-w9Xb7ykQEQDDfidgCSQxjyoBTXY82BKQRhBKKBTzl6r5",
+            .lazy = true,
         },
         .minimp4 = .{
             .url = "git+https://github.com/nat3Github/c-lib-minimp4#6bdb611e7c0ad0afd39ac4994cf6807b4331eb66",
             .hash = "minimp4-0.0.0-Ysmi4WhWAgBKiN7Qz33Ai6Np0TNKJGd-Q3k5L01DiqO9",
+            .lazy = true,
         },
         .fdk_aac = .{
-            .url = "git+https://github.com/nat3Github/cpp-lib-fdk-aac#4ad4c6b6cbe13763c25530bd2b7b1c3d47c59d7f",
-            .hash = "fdk_aac-2.0.3-XEQX41S-hQATlEI3g7IfOV1qbf3sM4dKBc3kJcgb5arL",
+            .url = "git+https://github.com/nat3Github/cpp-lib-fdk-aac#7fef640e545fd54b783b9c3fc163c33b26769213",
+            .hash = "fdk_aac-2.0.3-XEQX4wnBhQAHNPCcj-_aicKcjtfp2a_f7YUKpMwV1bN3",
+            .lazy = true,
         },
         .alac = .{
             .url = "git+https://github.com/nat3Github/cpp-lib-alac#c742c5d3f0ebcafc26ed2d9507000b5ba1d1c12a",
             .hash = "alac-0.0.0-ITKurBynAQCQDqOdrlVMKGJsZg0V6y5ItNPKhjSW2a15",
+            .lazy = true,
         },
         .r8brain = .{
             .url = "git+https://github.com/nat3Github/zig-lib-zr8brain#1cda8b53fecbdb75cd3aa5da279357ce4bb3c019",

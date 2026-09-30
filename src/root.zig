@@ -3,7 +3,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-pub const alac = @import("alac.zig");
+/// The ALAC codec on its own (no container). A compile error when built with -Dalac=false.
+pub const alac = if (build_options.alac) @import("alac.zig") else @compileError("audiocodec built with -Dalac=false");
 pub const c_allocator = @import("c_allocator.zig");
 pub const c = @import("c.zig");
 pub const sample = @import("sample.zig");
@@ -20,6 +21,21 @@ const opus = @import("opus.zig");
 const mp3 = @import("mp3.zig");
 const m4a = @import("m4a.zig");
 const aac = @import("aac.zig");
+const build_options = @import("build_options");
+
+/// Whether `codec` is compiled in (-D<codec>=false leaves it and its C libraries out; pcm, i.e. wav
+/// and aiff, is always in). A disabled codec's files still sniff to their container; open returns
+/// error.UnsupportedFormat for them.
+pub fn enabled(codec: Codec) bool {
+    return switch (codec) {
+        .pcm => true,
+        inline else => |tag| @field(build_options, @tagName(tag)),
+    };
+}
+
+/// License texts of every third-party library linked into this build (only the enabled codecs'),
+/// for an app's about box / notices file. Also installed as lib/THIRD_PARTY_NOTICES.
+pub const third_party_notices = @embedFile("THIRD_PARTY_NOTICES");
 
 comptime {
     _ = @import("libc.zig");
@@ -223,34 +239,41 @@ pub const Seeker = struct {
 /// open() peeks this many bytes (not consumed) to sniff the container.
 pub const min_buffer_len = 12;
 
-// ponytail: codec build flags (prompt 13) gate these fields to `void` once more backends exist.
+const has_m4a = build_options.aac or build_options.alac;
+
+/// Disabled codecs' fields are `noreturn`: never active, so their switch prongs (and through them
+/// the backend and its C library) are never analyzed or linked.
+fn Backend(comptime on: bool, comptime T: type) type {
+    return if (on) T else noreturn;
+}
+
 const DecoderBackend = union(enum) {
     pcm: pcm.Decoder,
-    flac: flac.Decoder,
-    vorbis: vorbis.Decoder,
-    opus: opus.Decoder,
-    mp3: mp3.Decoder,
-    m4a: m4a.Decoder,
-    adts: aac.Decoder,
+    flac: Backend(build_options.flac, flac.Decoder),
+    vorbis: Backend(build_options.vorbis, vorbis.Decoder),
+    opus: Backend(build_options.opus, opus.Decoder),
+    mp3: Backend(build_options.mp3, mp3.Decoder),
+    m4a: Backend(has_m4a, m4a.Decoder),
+    adts: Backend(build_options.aac, aac.Decoder),
 };
 
 const EncoderBackend = union(enum) {
     pcm: pcm.Encoder,
-    flac: flac.Encoder,
-    vorbis: vorbis.Encoder,
-    opus: opus.Encoder,
-    m4a: m4a.Encoder,
-    adts: aac.Encoder,
+    flac: Backend(build_options.flac, flac.Encoder),
+    vorbis: Backend(build_options.vorbis, vorbis.Encoder),
+    opus: Backend(build_options.opus, opus.Encoder),
+    m4a: Backend(has_m4a, m4a.Encoder),
+    adts: Backend(build_options.aac, aac.Encoder),
 };
 
 comptime {
     for (@typeInfo(DecoderBackend).@"union".fields) |f| {
-        if (f.type == void) continue;
+        if (f.type == noreturn) continue;
         for (.{ "info", "read", "ended", "seek", "deinit" }) |decl|
             if (!@hasDecl(f.type, decl)) @compileError("decoder backend " ++ f.name ++ " lacks " ++ decl);
     }
     for (@typeInfo(EncoderBackend).@"union".fields) |f| {
-        if (f.type == void) continue;
+        if (f.type == noreturn) continue;
         for (.{ "write", "flush", "finish", "deinit" }) |decl|
             if (!@hasDecl(f.type, decl)) @compileError("encoder backend " ++ f.name ++ " lacks " ++ decl);
     }
@@ -285,20 +308,20 @@ pub const Decoder = struct {
         const backend: DecoderBackend = switch (container) {
             .wav => .{ .pcm = try wav.open(gpa, arena.allocator(), reader, options.seeker, options.tags) },
             .aiff => .{ .pcm = try aiff.open(gpa, arena.allocator(), reader, options.seeker, options.tags) },
-            .flac => .{ .flac = try flac.Decoder.open(gpa, arena.allocator(), reader, options.seeker, options.tags, null) },
+            .flac => if (!build_options.flac) return error.UnsupportedFormat else .{ .flac = try flac.Decoder.open(gpa, arena.allocator(), reader, options.seeker, options.tags, null) },
             .ogg => blk: {
                 var buf: [ogg.max_head]u8 = undefined;
                 const head = try ogg.head(reader, &buf);
                 break :blk switch (head.codec) {
-                    .flac => .{ .flac = try flac.Decoder.open(gpa, arena.allocator(), reader, options.seeker, options.tags, head.bytes) },
-                    .vorbis => .{ .vorbis = try vorbis.Decoder.open(gpa, arena.allocator(), reader, options.seeker, options.tags, head.bytes) },
-                    .opus => .{ .opus = try opus.Decoder.open(gpa, arena.allocator(), reader, options.seeker, options.tags, head.bytes) },
+                    .flac => if (!build_options.flac) return error.UnsupportedFormat else .{ .flac = try flac.Decoder.open(gpa, arena.allocator(), reader, options.seeker, options.tags, head.bytes) },
+                    .vorbis => if (!build_options.vorbis) return error.UnsupportedFormat else .{ .vorbis = try vorbis.Decoder.open(gpa, arena.allocator(), reader, options.seeker, options.tags, head.bytes) },
+                    .opus => if (!build_options.opus) return error.UnsupportedFormat else .{ .opus = try opus.Decoder.open(gpa, arena.allocator(), reader, options.seeker, options.tags, head.bytes) },
                     else => return error.UnsupportedFormat,
                 };
             },
-            .mp3 => .{ .mp3 = try mp3.Decoder.open(gpa, arena.allocator(), reader, options.seeker, options.tags) },
-            .m4a => .{ .m4a = try m4a.Decoder.open(gpa, arena.allocator(), reader, options.seeker, options.tags) },
-            .adts => .{ .adts = try aac.Decoder.open(gpa, reader, options.seeker) },
+            .mp3 => if (!build_options.mp3) return error.UnsupportedFormat else .{ .mp3 = try mp3.Decoder.open(gpa, arena.allocator(), reader, options.seeker, options.tags) },
+            .m4a => if (!has_m4a) return error.UnsupportedFormat else .{ .m4a = try m4a.Decoder.open(gpa, arena.allocator(), reader, options.seeker, options.tags) },
+            .adts => if (!build_options.aac) return error.UnsupportedFormat else .{ .adts = try aac.Decoder.open(gpa, reader, options.seeker) },
         };
         return .{ .arena = arena, .backend = backend };
     }
@@ -378,20 +401,23 @@ pub const Encoder = struct {
             },
             .flac => blk: {
                 if (options.codec) |codec| if (codec != .flac) return error.UnsupportedFormat;
+                if (!build_options.flac) return error.UnsupportedFormat;
                 break :blk .{ .flac = try flac.Encoder.open(gpa, writer, options) };
             },
             .ogg => switch (options.codec orelse .vorbis) {
-                .vorbis => .{ .vorbis = try vorbis.Encoder.open(gpa, writer, options) },
-                .opus => .{ .opus = try opus.Encoder.open(gpa, writer, options) },
-                .flac => .{ .flac = try flac.Encoder.open(gpa, writer, options) },
+                .vorbis => if (!build_options.vorbis) return error.UnsupportedFormat else .{ .vorbis = try vorbis.Encoder.open(gpa, writer, options) },
+                .opus => if (!build_options.opus) return error.UnsupportedFormat else .{ .opus = try opus.Encoder.open(gpa, writer, options) },
+                .flac => if (!build_options.flac) return error.UnsupportedFormat else .{ .flac = try flac.Encoder.open(gpa, writer, options) },
                 else => return error.UnsupportedFormat,
             },
             .m4a => switch (options.codec orelse .aac) {
-                .alac, .aac => .{ .m4a = try m4a.Encoder.open(gpa, writer, options) },
+                .alac => if (!build_options.alac) return error.UnsupportedFormat else .{ .m4a = try m4a.Encoder.open(gpa, writer, options) },
+                .aac => if (!build_options.aac) return error.UnsupportedFormat else .{ .m4a = try m4a.Encoder.open(gpa, writer, options) },
                 else => return error.UnsupportedFormat,
             },
             .adts => blk: {
                 if (options.codec) |codec| if (codec != .aac) return error.UnsupportedFormat;
+                if (!build_options.aac) return error.UnsupportedFormat;
                 break :blk .{ .adts = try aac.Encoder.open(gpa, writer, options) };
             },
             .mp3 => return error.UnsupportedFormat,
