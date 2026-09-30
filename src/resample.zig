@@ -14,9 +14,9 @@ pub const Resampler = struct {
     channels: u16,
     in_rate: u32,
     out_rate: u32,
-    // ponytail: filter cache owned per Resampler (init recomputes filters); share one across
-    // Resamplers if init cost ever shows up in a profile. Heap-allocated: stages keep a pointer to it.
+    /// options.cache, or a private one (heap-allocated: stages keep a pointer to it).
     cache: *r8b.FIRFilterCache,
+    owns_cache: bool,
     /// One mono stage per channel.
     stages: []*Stage,
     /// Deinterleaved input of one channel, `chunk_frames` long.
@@ -37,11 +37,30 @@ pub const Resampler = struct {
         max,
     };
 
+    /// Filters and FFT setups shared by many Resamplers, also across threads (one mutex, taken
+    /// only in Resampler.init/deinit). Saves the filter design per init. Must outlive every
+    /// Resampler using it and must not move after the first one is created.
+    pub const Cache = struct {
+        inner: r8b.FIRFilterCache,
+
+        /// gpa holds the cached filters; it must be thread-safe if Resamplers on several threads share it.
+        pub fn init(gpa: Allocator, io: std.Io) Cache {
+            return .{ .inner = .initThreadSafe(gpa, io) };
+        }
+
+        pub fn deinit(c: *Cache) void {
+            c.inner.deinit();
+            c.* = undefined;
+        }
+    };
+
     pub const Options = struct {
         channels: u16,
         in_rate: u32,
         out_rate: u32,
         quality: Quality = .high,
+        /// null: a private cache, built and freed with this Resampler.
+        cache: ?*Cache = null,
     };
 
     pub const Result = struct { consumed: usize, produced: usize };
@@ -59,10 +78,11 @@ pub const Resampler = struct {
             .max => r8b.ResamplerQuality.quality24.attenuation(),
         };
 
-        const cache = try gpa.create(r8b.FIRFilterCache);
-        errdefer gpa.destroy(cache);
-        cache.* = .init(gpa);
-        errdefer cache.deinit();
+        const owns_cache = options.cache == null;
+        const cache = if (options.cache) |c| &c.inner else try gpa.create(r8b.FIRFilterCache);
+        errdefer if (owns_cache) gpa.destroy(cache);
+        if (owns_cache) cache.* = .init(gpa);
+        errdefer if (owns_cache) cache.deinit();
 
         const stages = try gpa.alloc(*Stage, options.channels);
         errdefer gpa.free(stages);
@@ -88,6 +108,7 @@ pub const Resampler = struct {
             .in_rate = options.in_rate,
             .out_rate = options.out_rate,
             .cache = cache,
+            .owns_cache = owns_cache,
             .stages = stages,
             .scratch = scratch,
             .pending = pending,
@@ -98,8 +119,10 @@ pub const Resampler = struct {
     pub fn deinit(r: *Resampler) void {
         for (r.stages) |s| s.deinit();
         r.gpa.free(r.stages);
-        r.cache.deinit();
-        r.gpa.destroy(r.cache);
+        if (r.owns_cache) {
+            r.cache.deinit();
+            r.gpa.destroy(r.cache);
+        }
         r.gpa.free(r.scratch);
         r.gpa.free(r.pending);
         r.* = undefined;
