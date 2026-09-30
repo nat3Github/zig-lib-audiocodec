@@ -36,3 +36,13 @@ from source by `zig build`. There are no system dependencies.
 ## License
 
 BSD-3-Clause (this repo). Vendored libraries keep their own licenses (see table).
+
+### fdk-aac (Fraunhofer)
+
+AAC is built from a modified fdk-aac, the "Third-Party Modified Version of the Fraunhofer FDK AAC
+Codec Library for Android", under Fraunhofer's software license (the fork's `NOTICE`). In short: the
+complete license text must ship with binaries, the fdk-aac source including modifications must be
+available free of charge (it is: nat3Github/cpp-lib-fdk-aac, branch `zig`), no copyright license fees,
+and Fraunhofer's name may not be used to promote derived products. The license grants **no patent
+rights**: using AAC may require patent licenses (e.g. through Via Licensing Alliance), which is up to
+you.

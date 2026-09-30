@@ -53,11 +53,16 @@ pub const Decoder = struct {
     /// The "shift off" buffer shares this memory (viewed as u16), as in the C++.
     predictor: []i32,
 
-    pub fn init(gpa: Allocator, magic_cookie: []const u8) (Allocator.Error || Error)!Decoder {
+    /// Older encoders wrap the config in 'frma' and 'alac' atoms; skips them if present.
+    pub fn unwrap(magic_cookie: []const u8) []const u8 {
         var cookie = magic_cookie;
-        // Older encoders wrap the config in 'frma' and 'alac' atoms; skip them if present.
         if (cookie.len >= 12 and std.mem.eql(u8, cookie[4..8], "frma")) cookie = cookie[12..];
         if (cookie.len >= 12 and std.mem.eql(u8, cookie[4..8], "alac")) cookie = cookie[12..];
+        return cookie;
+    }
+
+    pub fn init(gpa: Allocator, magic_cookie: []const u8) (Allocator.Error || Error)!Decoder {
+        const cookie = unwrap(magic_cookie);
         if (cookie.len < @sizeOf(SpecificConfig)) return error.InvalidParameter;
 
         const config: SpecificConfig = .{

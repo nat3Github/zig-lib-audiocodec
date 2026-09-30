@@ -1,5 +1,6 @@
 const std = @import("std");
 const Container = @import("root.zig").Container;
+const aac = @import("aac.zig");
 
 /// Container from the first 12 bytes of a stream. Ogg codecs are told apart by the ogg backend.
 pub fn sniff(b: *const [12]u8) ?Container {
@@ -11,6 +12,7 @@ pub fn sniff(b: *const [12]u8) ?Container {
     if (eql(u8, b[4..8], "ftyp")) return .m4a;
     // ponytail: an ID3 tag in front of flac/aac is taken for mp3; skip the tag here if that shows up.
     if (eql(u8, b[0..3], "ID3")) return .mp3;
-    if (b[0] == 0xff and b[1] & 0xe0 == 0xe0) return if (b[1] & 0x06 == 0) .adts else .mp3;
+    // Layer bits 00 are reserved in MPEG audio: ADTS (12-bit sync, sane fields) or nothing.
+    if (b[0] == 0xff and b[1] & 0xe0 == 0xe0) return if (b[1] & 0x06 != 0) .mp3 else if (aac.isAdts(b)) .adts else null;
     return null;
 }

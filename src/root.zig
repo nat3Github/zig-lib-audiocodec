@@ -19,6 +19,7 @@ const vorbis = @import("vorbis.zig");
 const opus = @import("opus.zig");
 const mp3 = @import("mp3.zig");
 const m4a = @import("m4a.zig");
+const aac = @import("aac.zig");
 
 comptime {
     _ = @import("libc.zig");
@@ -45,6 +46,9 @@ pub const Codec = enum { pcm, flac, vorbis, opus, mp3, aac, alac };
 /// Stored sample layout. `.i8` is stored the container's way: unsigned (offset binary) in wav,
 /// signed in aiff.
 pub const SampleFormat = enum { i8, i16, i24, i32, f32, f64 };
+
+/// AAC encoder profile: LC, HE-AAC (SBR), HE-AACv2 (SBR + PS, stereo only).
+pub const AacProfile = enum { lc, he, he_v2 };
 
 /// Bit-identical to WAVE_FORMAT_EXTENSIBLE dwChannelMask. Interleaved channel order everywhere is
 /// ascending bit order.
@@ -227,6 +231,7 @@ const DecoderBackend = union(enum) {
     opus: opus.Decoder,
     mp3: mp3.Decoder,
     m4a: m4a.Decoder,
+    adts: aac.Decoder,
 };
 
 const EncoderBackend = union(enum) {
@@ -235,6 +240,7 @@ const EncoderBackend = union(enum) {
     vorbis: vorbis.Encoder,
     opus: opus.Encoder,
     m4a: m4a.Encoder,
+    adts: aac.Encoder,
 };
 
 comptime {
@@ -292,7 +298,7 @@ pub const Decoder = struct {
             },
             .mp3 => .{ .mp3 = try mp3.Decoder.open(gpa, arena.allocator(), reader, options.seeker, options.tags) },
             .m4a => .{ .m4a = try m4a.Decoder.open(gpa, arena.allocator(), reader, options.seeker, options.tags) },
-            else => return error.UnsupportedFormat,
+            .adts => .{ .adts = try aac.Decoder.open(gpa, reader, options.seeker) },
         };
         return .{ .arena = arena, .backend = backend };
     }
@@ -352,6 +358,9 @@ pub const Encoder = struct {
         sample_format: SampleFormat = .i16,
         /// 0..1 for lossy codecs; null = codec default.
         quality: ?f32 = null,
+        /// bit/s, constant bitrate instead of `quality` (aac; other codecs ignore it).
+        bitrate: ?u32 = null,
+        aac_profile: AacProfile = .lc,
         tags: []const Tag = &.{},
         /// Ogg logical stream serial number (vorbis, opus). null: derived from the options, so output
         /// is reproducible. Files meant to be concatenated into a chain need distinct serials,
@@ -377,12 +386,15 @@ pub const Encoder = struct {
                 .flac => .{ .flac = try flac.Encoder.open(gpa, writer, options) },
                 else => return error.UnsupportedFormat,
             },
-            // ponytail: aac (the m4a default) arrives with prompt 10.
             .m4a => switch (options.codec orelse .aac) {
-                .alac => .{ .m4a = try m4a.Encoder.open(gpa, writer, options) },
+                .alac, .aac => .{ .m4a = try m4a.Encoder.open(gpa, writer, options) },
                 else => return error.UnsupportedFormat,
             },
-            else => return error.UnsupportedFormat,
+            .adts => blk: {
+                if (options.codec) |codec| if (codec != .aac) return error.UnsupportedFormat;
+                break :blk .{ .adts = try aac.Encoder.open(gpa, writer, options) };
+            },
+            .mp3 => return error.UnsupportedFormat,
         };
         return .{ .backend = backend };
     }

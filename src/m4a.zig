@@ -12,12 +12,15 @@
 //! so our write callback appends our own udta/meta/ilst to the moov it writes last in MP4E_close
 //! (moov's size patched on the way through).
 //!
-//! Codec specifics live in the Alac structs; 10-aac adds its own next to them.
+//! Codecs: ALAC (alac.zig) and AAC (aac.zig, fdk-aac). AAC gapless: the edit list, else
+//! iTunes' iTunSMPB (priming, padding, length); our encoder writes an edit list (media_time =
+//! encoder delay) and shortens the last sample's duration, so the stts total is exact too.
 
 const std = @import("std");
 const root = @import("root.zig");
 const sample = @import("sample.zig");
 const alac = @import("alac.zig");
+const aac = @import("aac.zig");
 const id3 = @import("id3.zig");
 const c_allocator = @import("c_allocator.zig");
 const c = @import("zig-c-headers/minimp4.zig");
@@ -36,6 +39,8 @@ const max_moov = 64 << 20;
 const Box = struct {
     type: [4]u8,
     body: []const u8,
+    /// Header length: the header sits right in front of `body`.
+    header: u8 = 8,
 
     fn is(b: Box, t: *const [4]u8) bool {
         return std.mem.eql(u8, &b.type, t);
@@ -62,7 +67,7 @@ const Boxes = struct {
         if (size < header or size > r.len) return null;
         const len: usize = @intCast(size);
         it.rest = r[len..];
-        return .{ .type = r[4..8].*, .body = r[header..len] };
+        return .{ .type = r[4..8].*, .body = r[header..len], .header = @intCast(header) };
     }
 
     fn find(bytes: []const u8, t: *const [4]u8) ?[]const u8 {
@@ -164,6 +169,31 @@ fn firstEdit(elst: []const u8, movie_timescale: u32) ?Edit {
         const media_time: i64 = if (v1) @bitCast(be64(elst, at + 8).?) else @as(i32, @bitCast(be32(elst, at + 4).?));
         if (media_time < 0) continue; // empty edit
         return .{ .media_time = @intCast(media_time), .duration = duration, .movie_timescale = movie_timescale };
+    }
+    return null;
+}
+
+/// iTunes' gapless info: ilst '----' item "iTunSMPB", text " 00000000 <priming> <padding>
+/// <length> ..." in hex, media timescale units.
+const Smpb = struct { delay: u64, length: u64 };
+
+fn itunSmpb(moov: []const u8) ?Smpb {
+    const meta = Boxes.path(moov, &.{ "udta", "meta" }) orelse return null;
+    const children = if (meta.len >= 8 and std.mem.eql(u8, meta[4..8], "hdlr")) meta else if (meta.len >= 4) meta[4..] else return null;
+    const ilst = Boxes.find(children, "ilst") orelse return null;
+    var it: Boxes = .{ .rest = ilst };
+    while (it.next()) |item| {
+        if (!item.is("----")) continue;
+        const name = Boxes.find(item.body, "name") orelse continue;
+        if (name.len < 4 or !std.ascii.eqlIgnoreCase(name[4..], "iTunSMPB")) continue;
+        const data = Boxes.find(item.body, "data") orelse return null;
+        if (data.len < 8) return null;
+        var fields = std.mem.tokenizeScalar(u8, data[8..], ' ');
+        _ = fields.next() orelse return null;
+        const delay = std.fmt.parseInt(u64, fields.next() orelse return null, 16) catch return null;
+        _ = fields.next() orelse return null; // padding: implied by the length
+        const length = std.fmt.parseInt(u64, fields.next() orelse return null, 16) catch return null;
+        return .{ .delay = delay, .length = length };
     }
     return null;
 }
@@ -474,6 +504,11 @@ fn alacLayout(bit_depth: u8) sample.Layout {
 pub const Decoder = struct {
     state: *State,
 
+    const Codec = union(enum) {
+        alac: alac.Decoder,
+        aac: aac.Codec,
+    };
+
     const State = struct {
         gpa: Allocator,
         reader: *std.Io.Reader,
@@ -486,9 +521,15 @@ pub const Decoder = struct {
         /// Per-sample timestamps / durations in the media timescale (minimp4's stts tables).
         timestamps: [*]const c_uint = undefined,
         durations: [*]const c_uint = undefined,
-        codec: alac.Decoder = undefined,
+        /// Output frames per media timescale unit: 2 for HE-AAC with the core rate as timescale.
+        scale: u32 = 1,
+        codec: Codec = undefined,
+        /// AAC: the format of the first access unit; a change is UnsupportedFormat.
+        format: aac.Format = undefined,
         layout: sample.Layout = undefined,
         frame_bytes: usize = 0,
+        /// Largest valid packet.
+        max_packet: usize = 0,
         /// Source offset of the reader.
         pos: u64 = 0,
         packet: []u8 = &.{},
@@ -497,7 +538,7 @@ pub const Decoder = struct {
         pcm_used: usize = 0,
         pcm_len: usize = 0,
         next: u32 = 0,
-        /// Media time of the next frame to output; the presentation is [start, end).
+        /// Media time (output frames) of the next frame to output; the presentation is [start, end).
         media_pos: u64 = 0,
         start: u64 = 0,
         end: u64 = 0,
@@ -510,9 +551,23 @@ pub const Decoder = struct {
             const prev = c_allocator.set(s.gpa);
             c.MP4D_close(&s.mp4);
             c_allocator.restore(prev);
-            s.codec.deinit(s.gpa);
             s.gpa.free(s.packet);
             s.gpa.free(s.pcm);
+        }
+
+        fn deinitCodec(s: *State) void {
+            switch (s.codec) {
+                .alac => |*a| a.deinit(s.gpa),
+                .aac => |*a| a.close(s.gpa),
+            }
+        }
+
+        fn timestamp(s: *const State, k: u32) u64 {
+            return @as(u64, s.timestamps[k]) * s.scale;
+        }
+
+        fn duration(s: *const State, k: u32) u64 {
+            return @as(u64, s.durations[k]) * s.scale;
         }
     };
 
@@ -523,15 +578,8 @@ pub const Decoder = struct {
         var top: Boxes = .{ .rest = moov };
         const moov_body = top.next().?.body;
         const track = findTrack(moov_body) orelse return error.InvalidFile;
-        if (!std.mem.eql(u8, &track.entry, "alac")) return error.UnsupportedFormat;
-        if (track.cookie.len < 24) return error.InvalidFile;
-        const channels = track.cookie[9];
-        const bit_depth = track.cookie[5];
-        const frame_length = std.mem.readInt(u32, track.cookie[0..4], .big);
-        const rate = std.mem.readInt(u32, track.cookie[20..24], .big);
-        if (channels == 0 or channels > 8 or frame_length == 0 or frame_length > max_alac_frame) return error.InvalidFile;
-        // ponytail: stts durations are taken as frames; other timescales would need rescaling.
-        if (rate != track.timescale) return error.UnsupportedFormat;
+        const is_alac = std.mem.eql(u8, &track.entry, "alac");
+        if (!is_alac and !std.mem.eql(u8, &track.entry, "mp4a")) return error.UnsupportedFormat;
 
         const s = try gpa.create(State);
         errdefer gpa.destroy(s);
@@ -542,17 +590,15 @@ pub const Decoder = struct {
             .pos = pos,
             .info = .{
                 .container = .m4a,
-                .codec = .alac,
-                .sample_rate = rate,
-                .channels = channels,
-                .channel_layout = alac_layouts[channels - 1],
+                .codec = if (is_alac) .alac else .aac,
+                .sample_rate = 0,
+                .channels = 0,
+                .channel_layout = null,
                 .frames = null,
-                .bits_per_sample = bit_depth,
+                .bits_per_sample = 0,
                 .sample_format = null,
-                .tags = try parseTags(arena, moov_body, tag_mode),
             },
         };
-
         {
             const prev = c_allocator.set(gpa);
             defer c_allocator.restore(prev);
@@ -566,6 +612,10 @@ pub const Decoder = struct {
             c_allocator.restore(prev);
         }
         if (c_allocator.failed) return error.OutOfMemory;
+        errdefer {
+            gpa.free(s.packet);
+            gpa.free(s.pcm);
+        }
         if (track.index >= s.mp4.track_count) return error.InvalidFile;
         const tr = &s.mp4.track.?[track.index];
         s.track = track.index;
@@ -579,27 +629,91 @@ pub const Decoder = struct {
         for (0..s.samples) |i| total += s.durations[i];
         // minimp4's timestamps are 32-bit. ponytail: longer tracks (27 h at 44.1 kHz) unsupported.
         if (total > std.math.maxInt(c_uint)) return error.UnsupportedFormat;
+
+        // The codec: output format, scale, pcm buffer. AAC decodes the first packet here.
+        var first_frames: ?usize = null;
+        if (is_alac) {
+            const cookie = alac.Decoder.unwrap(track.cookie); // the bytes init reads
+            if (cookie.len < 24) return error.InvalidFile;
+            const channels = cookie[9];
+            const bit_depth = cookie[5];
+            const frame_length = std.mem.readInt(u32, cookie[0..4], .big);
+            const rate = std.mem.readInt(u32, cookie[20..24], .big);
+            if (channels == 0 or channels > 8 or frame_length == 0 or frame_length > max_alac_frame) return error.InvalidFile;
+            // ponytail: stts durations are taken as frames; other timescales would need rescaling.
+            if (rate != track.timescale) return error.UnsupportedFormat;
+            s.info.sample_rate = rate;
+            s.info.channels = channels;
+            s.info.channel_layout = alac_layouts[channels - 1];
+            s.info.bits_per_sample = bit_depth;
+            s.codec = .{ .alac = alac.Decoder.init(gpa, track.cookie) catch |err| return switch (err) {
+                error.OutOfMemory => error.OutOfMemory,
+                error.InvalidParameter => error.InvalidFile,
+            } };
+            errdefer s.deinitCodec();
+            s.layout = alacLayout(bit_depth);
+            s.frame_bytes = @as(usize, sample.size(s.layout.format)) * channels;
+            s.max_packet = frame_length * s.frame_bytes + 64; // an uncompressed frame plus headers
+            s.pcm = try gpa.alignedAlloc(u8, .@"4", frame_length * s.frame_bytes);
+        } else {
+            // MPEG-4 audio, or MPEG-2 AAC main / LC / SSR; all with an AudioSpecificConfig.
+            switch (tr.object_type_indication) {
+                c.MP4_OBJECT_TYPE_AUDIO_ISO_IEC_14496_3,
+                c.MP4_OBJECT_TYPE_AUDIO_ISO_IEC_13818_7_MAIN_PROFILE,
+                c.MP4_OBJECT_TYPE_AUDIO_ISO_IEC_13818_7_LC_PROFILE,
+                c.MP4_OBJECT_TYPE_AUDIO_ISO_IEC_13818_7_SSR_PROFILE,
+                => {},
+                else => return error.UnsupportedFormat,
+            }
+            const dsi = (tr.dsi orelse return error.InvalidFile)[0..tr.dsi_bytes];
+            s.codec = .{ .aac = try aac.Codec.open(gpa, dsi) };
+            errdefer s.deinitCodec();
+            s.layout = .{ .format = .i16, .endian = native };
+            s.pcm = try gpa.alignedAlloc(u8, .@"4", aac.max_frame * aac.max_channels * 2);
+            s.max_packet = aac.max_frame * aac.max_channels * 2;
+            if (s.samples == 0) return error.InvalidFile; // no packet to learn the format from
+            const packet = try readPacket(s, 0) orelse return error.InvalidFile;
+            s.format = try s.codec.aac.decode(gpa, packet, std.mem.bytesAsSlice(i16, s.pcm));
+            first_frames = s.format.frame_size;
+            s.info.sample_rate = s.format.rate;
+            s.info.channels = s.format.channels;
+            s.info.channel_layout = s.format.layout;
+            s.frame_bytes = 2 * @as(usize, s.format.channels);
+            // HE-AAC files may count time at the core rate (afconvert).
+            s.scale = if (s.format.rate == track.timescale) 1 else if (s.format.rate == 2 * track.timescale) 2 else return error.UnsupportedFormat;
+        }
+        errdefer s.deinitCodec();
+
+        total *= s.scale;
         s.end = total;
         if (track.edit) |e| {
-            s.start = @min(e.media_time, total);
+            s.start = @min(e.media_time * s.scale, total);
             // The edit's duration is in the movie timescale (often 1/1000 s), so it only trims
             // when it is shorter than the media by more than its own rounding.
             const avail = total - s.start;
-            const length = std.math.cast(u64, std.math.mulWide(u64, e.duration, track.timescale) / e.movie_timescale) orelse avail;
-            const slack = track.timescale / e.movie_timescale + 1;
-            if (length +| slack < avail) s.end = s.start + length;
+            const length = std.math.cast(u64, std.math.mulWide(u64, e.duration, s.info.sample_rate) / e.movie_timescale) orelse avail;
+            const slack = std.math.divCeil(u32, s.info.sample_rate, e.movie_timescale) catch unreachable; // timescale > 0: firstEdit
+            if (length +| slack <= avail) s.end = s.start + length;
+        } else if (!is_alac) {
+            if (itunSmpb(moov_body)) |g| {
+                s.start = @min(g.delay * s.scale, total);
+                if (g.length > 0) s.end = s.start + @min(g.length * s.scale, total - s.start);
+            }
+        }
+        if (!is_alac) {
+            // The edit / iTunSMPB count from an ideal decoder's output; fdk's lags by `delay`
+            // and runs to the end of the last access unit.
+            const avail = @max(total, s.timestamp(s.samples - 1) + s.format.frame_size);
+            s.start = @min(s.start + s.format.delay, avail);
+            s.end = @min(s.end + s.format.delay, avail);
         }
         s.info.frames = s.end - s.start;
         s.media_pos = s.start;
-
-        s.codec = alac.Decoder.init(gpa, track.cookie) catch |err| return switch (err) {
-            error.OutOfMemory => error.OutOfMemory,
-            error.InvalidParameter => error.InvalidFile,
-        };
-        errdefer s.codec.deinit(gpa);
-        s.layout = alacLayout(bit_depth);
-        s.frame_bytes = @as(usize, sample.size(s.layout.format)) * channels;
-        s.pcm = try gpa.alignedAlloc(u8, .@"4", frame_length * s.frame_bytes);
+        if (first_frames) |n| {
+            s.next = 1;
+            window(s, 0, n);
+        }
+        s.info.tags = try parseTags(arena, moov_body, tag_mode);
         return .{ .state = s };
     }
 
@@ -612,6 +726,7 @@ pub const Decoder = struct {
     }
 
     pub fn deinit(d: *Decoder) void {
+        d.state.deinitCodec();
         d.state.deinit();
         d.state.gpa.destroy(d.state);
     }
@@ -622,7 +737,7 @@ pub const Decoder = struct {
 
     pub fn ended(d: *const Decoder) bool {
         const s = d.state;
-        return s.eos or s.media_pos >= s.end;
+        return s.pcm_used == s.pcm_len and (s.eos or s.media_pos >= s.end);
     }
 
     pub fn read(d: *Decoder, comptime T: type, out: []T) Error!usize {
@@ -631,10 +746,6 @@ pub const Decoder = struct {
         const want = out.len / channels;
         var n: usize = 0;
         while (n < want) {
-            if (s.err) |e| {
-                if (n > 0) break;
-                return e;
-            }
             if (s.pcm_used < s.pcm_len) {
                 const k = @min(want - n, s.pcm_len - s.pcm_used);
                 sample.decode(T, out[n * channels ..][0 .. k * channels], s.pcm[s.pcm_used * s.frame_bytes ..][0 .. k * s.frame_bytes], s.layout);
@@ -642,6 +753,10 @@ pub const Decoder = struct {
                 s.media_pos += k;
                 n += k;
                 continue;
+            }
+            if (s.err) |e| {
+                if (n > 0) break;
+                return e;
             }
             if (s.eos or s.media_pos >= s.end or s.next >= s.samples) {
                 s.eos = true;
@@ -658,22 +773,38 @@ pub const Decoder = struct {
     fn decodeNext(s: *State) Error!void {
         const k = s.next;
         s.next += 1;
-        const t: u64 = s.timestamps[k];
-        const duration: u64 = s.durations[k];
+        const t = s.timestamp(k);
         // A packet that decoded short leaves a gap; its missing frames are simply not output.
         if (s.media_pos < t) s.media_pos = t;
-        if (t + duration <= s.media_pos) return;
+        // ALAC packets before the position are skipped; AAC ones are decoded (priming, pre-roll).
+        if (s.codec == .alac and t + s.duration(k) <= s.media_pos) return;
         const packet = try readPacket(s, k) orelse {
             s.eos = true;
             return;
         };
-        const channels = s.info.channels;
-        const frames = s.codec.decode(packet, s.pcm, s.codec.config.frameLength, channels) catch return error.InvalidFile;
-        const valid = @min(frames, duration);
-        const lo: usize = @intCast(s.media_pos - t);
-        const hi: usize = @intCast(@min(valid, s.end - t));
+        const frames: usize = switch (s.codec) {
+            .alac => |*a| a.decode(packet, s.pcm, a.config.frameLength, s.info.channels) catch return error.InvalidFile,
+            .aac => |*a| blk: {
+                const f = try a.decode(s.gpa, packet, std.mem.bytesAsSlice(i16, s.pcm));
+                if (!f.eql(s.format)) return error.UnsupportedFormat;
+                break :blk f.frame_size;
+            },
+        };
+        window(s, k, frames);
+    }
+
+    /// The part of packet `k`'s `frames` output inside the presentation, from media_pos on.
+    fn window(s: *State, k: u32, frames: usize) void {
+        const t = s.timestamp(k);
+        // An AAC access unit always yields a whole frame; the last one's stts duration may
+        // be cut short of fdk's own decoder delay (our encoder, see Encoder.State.release).
+        const valid = if (s.codec == .aac) frames else @min(frames, s.duration(k));
+        if (s.media_pos < t) s.media_pos = t;
+        const lo: usize = @intCast(@min(s.media_pos - t, valid));
+        const hi: usize = @intCast(@min(valid, s.end -| t));
         if (lo >= hi) return;
-        if (channels > 2) remap(s.pcm[lo * s.frame_bytes .. hi * s.frame_bytes], alac_order[channels - 1], s.frame_bytes / channels);
+        const channels = s.info.channels;
+        if (s.codec == .alac and channels > 2) remap(s.pcm[lo * s.frame_bytes .. hi * s.frame_bytes], alac_order[channels - 1], s.frame_bytes / channels);
         s.pcm_used = lo;
         s.pcm_len = hi;
     }
@@ -694,13 +825,11 @@ pub const Decoder = struct {
     fn readPacket(s: *State, k: u32) Error!?[]const u8 {
         var size: c_uint = 0;
         const offset = c.MP4D_frame_offset(&s.mp4, s.track, k, &size, null, null);
-        // An uncompressed ALAC frame plus headers; anything bigger is damage.
-        const max = s.codec.config.frameLength * s.frame_bytes + 64;
-        if (size == 0 or size > max) return error.InvalidFile;
+        if (size == 0 or size > s.max_packet) return error.InvalidFile;
         if (s.packet.len < size) {
             s.gpa.free(s.packet);
             s.packet = &.{};
-            s.packet = try s.gpa.alloc(u8, max);
+            s.packet = try s.gpa.alloc(u8, s.max_packet);
         }
         if (offset != s.pos) {
             if (s.seeker) |sk| {
@@ -724,7 +853,8 @@ pub const Decoder = struct {
         return buf;
     }
 
-    /// Sample exact: ALAC packets decode independently.
+    /// Sample exact position. ALAC packets decode independently: same samples as a linear read.
+    /// AAC decodes `Format.preroll` packets before the target first (MDCT overlap, SBR state).
     pub fn seek(d: *Decoder, frame: u64) Error!void {
         const s = d.state;
         if (s.seeker == null) return error.NotSeekable;
@@ -732,12 +862,18 @@ pub const Decoder = struct {
         const target = s.start + frame;
         // Last sample starting at or before the target.
         const Ctx = struct {
-            fn order(t: u64, ts: c_uint) std.math.Order {
-                return std.math.order(t, ts);
+            target: u64,
+            scale: u32,
+            fn order(ctx: @This(), ts: c_uint) std.math.Order {
+                return std.math.order(ctx.target, @as(u64, ts) * ctx.scale);
             }
         };
-        const after = std.sort.upperBound(c_uint, s.timestamps[0..s.samples], target, Ctx.order);
+        const after = std.sort.upperBound(c_uint, s.timestamps[0..s.samples], Ctx{ .target = target, .scale = s.scale }, Ctx.order);
         s.next = @intCast(after -| 1);
+        if (s.codec == .aac) {
+            s.next -|= s.format.preroll();
+            s.codec.aac.reset();
+        }
         s.media_pos = target;
         s.pcm_used = 0;
         s.pcm_len = 0;
@@ -753,28 +889,42 @@ pub const Encoder = struct {
 
     const frame_size = alac.default_frame_size;
 
+    const Alac = struct {
+        codec: alac.Encoder,
+        layout: sample.Layout,
+        /// One packet of input, bitstream channel order, native endian.
+        input: []align(4) u8,
+        input_frames: u32 = 0,
+        packet: []u8,
+    };
+
+    /// fdk's access units are held until they are known not to be the last one (its duration is
+    /// cut to the end of the audio) or past the end (flush padding: dropped).
+    const Aac = struct {
+        enc: aac.Enc,
+        held: std.ArrayList(u8) = .empty,
+        held_sizes: std.ArrayList(u32) = .empty,
+        /// Access units passed to MP4E.
+        muxed: u64 = 0,
+    };
+
     const State = struct {
         gpa: Allocator,
         writer: *std.Io.Writer,
         seeker: Seeker,
         mux: ?*c.MP4E_mux_t = null,
-        codec: alac.Encoder = undefined,
-        format: root.SampleFormat,
+        codec: union(enum) { alac: Alac, aac: Aac },
         channels: u16,
         rate: u32,
-        layout: sample.Layout,
-        /// One packet of input, bitstream channel order, native endian.
-        input: []align(4) u8 = &.{},
-        input_frames: u32 = 0,
-        packet: []u8 = &.{},
         udta: []u8 = &.{},
+        /// Input frames.
         frames: u64 = 0,
         bytes: u64 = 0,
         /// Writer offset and the furthest byte written.
         pos: u64 = 0,
         end: u64 = 0,
         err: ?Error = null,
-        /// In MP4E_close: its last write is the moov box, which gets our udta appended.
+        /// In MP4E_close: its last write is the moov box, which gets our edts and udta.
         finishing: bool = false,
         /// deinit without finish: MP4E_close still writes the index; drop it.
         closing: bool = false,
@@ -793,13 +943,10 @@ pub const Encoder = struct {
                 s.pos = offset;
             }
             if (s.finishing and bytes.len >= 8 and std.mem.eql(u8, bytes[4..8], "moov")) {
-                var head = bytes[0..8].*;
-                const size = std.math.add(u32, std.mem.readInt(u32, head[0..4], .big), @intCast(s.udta.len)) catch return error.FileTooLarge;
-                std.mem.writeInt(u32, head[0..4], size, .big);
-                try s.writer.writeAll(&head);
-                try s.writer.writeAll(bytes[8..]);
-                try s.writer.writeAll(s.udta);
-                s.pos += bytes.len + s.udta.len;
+                const moov = try s.finalMoov(bytes);
+                defer s.gpa.free(moov);
+                try s.writer.writeAll(moov);
+                s.pos += moov.len;
             } else {
                 try s.writer.writeAll(bytes);
                 s.pos += bytes.len;
@@ -807,40 +954,137 @@ pub const Encoder = struct {
             s.end = @max(s.end, s.pos);
         }
 
+        /// MP4E's moov + our udta, and for AAC an edit list in front of the trak's mdia:
+        /// media_time = encoder delay, duration = the input length. The stts can't carry the
+        /// length (HE: the AUs cover fdk's decoder delay too, see `release`), so the movie
+        /// timescale becomes the sample rate (MP4E's is 1000) and the edit is exact.
+        fn finalMoov(s: *State, moov: []const u8) Error![]u8 {
+            var out: std.ArrayList(u8) = .empty;
+            errdefer out.deinit(s.gpa);
+            try out.appendSlice(s.gpa, moov[0..8]);
+            const length = std.math.cast(u32, s.frames) orelse return error.FileTooLarge;
+            var it: Boxes = .{ .rest = moov[8..] };
+            while (it.next()) |b| {
+                const start = out.items.len;
+                if (s.codec == .aac and b.is("mvhd") and b.body.len >= 20) {
+                    try appendBox(s.gpa, &out, b);
+                    const body = out.items[start + b.header ..];
+                    std.mem.writeInt(u32, body[12..16], s.rate, .big);
+                    std.mem.writeInt(u32, body[16..20], length, .big);
+                } else if (s.codec == .aac and b.is("trak")) {
+                    try out.appendSlice(s.gpa, &.{ 0, 0, 0, 0, 't', 'r', 'a', 'k' });
+                    var children: Boxes = .{ .rest = b.body };
+                    while (children.next()) |child| {
+                        if (child.is("mdia")) try s.appendEdts(&out);
+                        const at = out.items.len;
+                        try appendBox(s.gpa, &out, child);
+                        if (child.is("tkhd") and child.body.len >= 24)
+                            std.mem.writeInt(u32, out.items[at + child.header ..][20..24], length, .big);
+                    }
+                    std.mem.writeInt(u32, out.items[start..][0..4], std.math.cast(u32, out.items.len - start) orelse return error.FileTooLarge, .big);
+                } else {
+                    try appendBox(s.gpa, &out, b);
+                }
+            }
+            try out.appendSlice(s.gpa, s.udta);
+            std.mem.writeInt(u32, out.items[0..4], std.math.cast(u32, out.items.len) orelse return error.FileTooLarge, .big);
+            return out.toOwnedSlice(s.gpa);
+        }
+
+        fn appendEdts(s: *State, out: *std.ArrayList(u8)) Error!void {
+            const a = &s.codec.aac;
+            const duration = std.math.cast(u32, s.frames) orelse return error.FileTooLarge; // movie timescale = rate
+            var edts: [36]u8 = undefined;
+            std.mem.writeInt(u32, edts[0..4], 36, .big);
+            @memcpy(edts[4..8], "edts");
+            std.mem.writeInt(u32, edts[8..12], 28, .big);
+            @memcpy(edts[12..16], "elst");
+            std.mem.writeInt(u32, edts[16..20], 0, .big); // version, flags
+            std.mem.writeInt(u32, edts[20..24], 1, .big); // entries
+            std.mem.writeInt(u32, edts[24..28], duration, .big);
+            std.mem.writeInt(u32, edts[28..32], a.enc.delay, .big);
+            std.mem.writeInt(u32, edts[32..36], 0x00010000, .big); // rate 1.0
+            try out.appendSlice(s.gpa, &edts);
+        }
+
         fn encodePacket(s: *State) Error!void {
-            const frames = s.input_frames;
+            const a = &s.codec.alac;
+            const frames = a.input_frames;
             if (s.frames + frames > std.math.maxInt(u32)) return error.FileTooLarge; // 32-bit durations in MP4E
             var format = std.mem.zeroes(alac.AudioFormatDescription);
             format.mChannelsPerFrame = s.channels;
-            format.mBytesPerPacket = @as(u32, s.channels) * sample.size(s.layout.format);
-            const len = s.codec.encode(format, s.input[0 .. frames * format.mBytesPerPacket], s.packet) catch unreachable; // sizes are ours
+            format.mBytesPerPacket = @as(u32, s.channels) * sample.size(a.layout.format);
+            const len = a.codec.encode(format, a.input[0 .. frames * format.mBytesPerPacket], a.packet) catch unreachable; // sizes are ours
+            try s.put(a.packet[0..len], frames);
+            s.frames += frames;
+            a.input_frames = 0;
+        }
+
+        fn put(s: *State, bytes: []const u8, duration: u32) Error!void {
             const prev = c_allocator.set(s.gpa);
             defer c_allocator.restore(prev);
-            if (c.MP4E_put_sample(s.mux.?, 0, s.packet.ptr, @intCast(len), @intCast(frames), c.MP4E_SAMPLE_RANDOM_ACCESS) != c.MP4E_STATUS_OK)
+            if (c.MP4E_put_sample(s.mux.?, 0, bytes.ptr, @intCast(bytes.len), @intCast(duration), c.MP4E_SAMPLE_RANDOM_ACCESS) != c.MP4E_STATUS_OK)
                 return s.fail(error.OutOfMemory);
-            s.frames += frames;
-            s.bytes += len;
-            s.input_frames = 0;
+            s.bytes += bytes.len;
+        }
+
+        /// aac.Enc sink.
+        pub fn packet(s: *State, bytes: []const u8) Error!void {
+            const a = &s.codec.aac;
+            try a.held.appendSlice(s.gpa, bytes);
+            try a.held_sizes.append(s.gpa, @intCast(bytes.len));
+            try s.release(null);
+        }
+
+        /// Muxes held access units: with `total` (finish) all up to the end of the audio in
+        /// fdk's own output (encoder + SBR decoder delay), the last one's duration cut so the
+        /// stts ends where the audio does for an ideal decoder (can be 0 for HE); else those
+        /// that are surely not the last (`frames` only grows).
+        fn release(s: *State, total: ?u64) Error!void {
+            const a = &s.codec.aac;
+            const fl: u64 = a.enc.frame_length;
+            const lag: u64 = a.enc.delay + a.enc.decoder_delay;
+            const needed = if (total) |t| (lag + t + fl - 1) / fl else 0;
+            var used: usize = 0;
+            var n: usize = 0;
+            for (a.held_sizes.items) |size| {
+                const i = a.muxed;
+                const duration = if (total) |t| blk: {
+                    if (i >= needed) break;
+                    break :blk if (i + 1 == needed) @min((a.enc.delay + t) -| i * fl, fl) else fl;
+                } else blk: {
+                    if ((i + 1) * fl >= lag + s.frames) break;
+                    break :blk fl;
+                };
+                if (lag + s.frames + fl > std.math.maxInt(u32)) return error.FileTooLarge; // 32-bit durations in MP4E
+                try s.put(a.held.items[used..][0..size], @intCast(duration));
+                used += size;
+                n += 1;
+                a.muxed += 1;
+            }
+            if (total != null) {
+                a.held.clearRetainingCapacity();
+                a.held_sizes.clearRetainingCapacity();
+                return;
+            }
+            a.held.replaceRangeAssumeCapacity(0, used, &.{});
+            a.held_sizes.replaceRangeAssumeCapacity(0, n, &.{});
         }
     };
 
-    /// sample_format i16/i24/i32 -> 16/24/32-bit ALAC (ponytail: 20-bit would need an i20 format).
-    /// quality < 0.5 selects the encoder's fast mode (stereo only; ALAC is lossless either way).
-    /// Channels 1..8 in ALAC's own layouts (null = that layout). Needs a seeker (moov at the end).
+    fn appendBox(gpa: Allocator, out: *std.ArrayList(u8), b: Box) Allocator.Error!void {
+        try out.appendSlice(gpa, (b.body.ptr - b.header)[0 .. b.header + b.body.len]);
+    }
+
+    /// ALAC: sample_format i16/i24/i32 -> 16/24/32-bit (ponytail: 20-bit would need an i20
+    /// format); quality < 0.5 selects the encoder's fast mode (stereo only; lossless either way).
+    /// Channels 1..8 in ALAC's own layouts (null = that layout).
+    /// AAC: see aac.Enc; channels 1..8 in AAC's layouts (aac.layouts, null = that layout).
+    /// Needs a seeker (moov at the end).
     pub fn open(gpa: Allocator, writer: *std.Io.Writer, options: root.Encoder.Options) Error!Encoder {
         const seeker = options.seeker orelse return error.NotSeekable;
-        const flags: u32, const format: sample.Layout = switch (options.sample_format) {
-            .i16 => .{ 1, alacLayout(16) },
-            .i24 => .{ 3, alacLayout(24) },
-            .i32 => .{ 4, alacLayout(32) },
-            else => return error.UnsupportedFormat,
-        };
+        const is_aac = (options.codec orelse .aac) == .aac;
         if (options.channels > 8) return error.UnsupportedFormat;
-        if (options.channel_layout) |l| if (l.mask() != alac_layouts[options.channels - 1].mask()) return error.UnsupportedFormat;
-        const fast = if (options.quality) |q| blk: {
-            if (!(q >= 0 and q <= 1)) return error.InvalidOptions;
-            break :blk q < 0.5;
-        } else false;
 
         const s = try gpa.create(State);
         errdefer gpa.destroy(s);
@@ -848,26 +1092,18 @@ pub const Encoder = struct {
             .gpa = gpa,
             .writer = writer,
             .seeker = seeker,
-            .format = options.sample_format,
             .channels = options.channels,
             .rate = options.sample_rate,
-            .layout = format,
+            .codec = undefined,
         };
+        if (is_aac) {
+            s.codec = .{ .aac = .{ .enc = try aac.Enc.open(gpa, options, false) } };
+        } else {
+            s.codec = .{ .alac = try openAlac(gpa, options) };
+        }
+        errdefer deinitCodec(s);
         s.udta = try buildUdta(gpa, options.tags);
         errdefer gpa.free(s.udta);
-        var description = std.mem.zeroes(alac.AudioFormatDescription);
-        description.mSampleRate = @floatFromInt(options.sample_rate);
-        description.mFormatFlags = flags;
-        description.mChannelsPerFrame = options.channels;
-        s.codec = alac.Encoder.init(gpa, description, frame_size, fast) catch |err| return switch (err) {
-            error.OutOfMemory => error.OutOfMemory,
-            error.InvalidParameter => error.InvalidOptions,
-        };
-        errdefer s.codec.deinit(gpa);
-        s.input = try gpa.alignedAlloc(u8, .@"4", frame_size * @as(usize, options.channels) * sample.size(format.format));
-        errdefer gpa.free(s.input);
-        s.packet = try gpa.alloc(u8, s.codec.max_output_bytes);
-        errdefer gpa.free(s.packet);
 
         const prev = c_allocator.set(gpa);
         defer c_allocator.restore(prev);
@@ -877,7 +1113,7 @@ pub const Encoder = struct {
             _ = c.MP4E_close(s.mux.?);
         }
         const track: c.MP4E_track_t = .{
-            .object_type_indication = c.MP4_OBJECT_TYPE_ALAC,
+            .object_type_indication = if (is_aac) c.MP4_OBJECT_TYPE_AUDIO_ISO_IEC_14496_3 else c.MP4_OBJECT_TYPE_ALAC,
             .language = "und\x00".*,
             .track_media_kind = c.e_audio,
             .time_scale = options.sample_rate,
@@ -885,7 +1121,53 @@ pub const Encoder = struct {
             .u = .{ .a = .{ .channelcount = options.channels } },
         };
         if (c.MP4E_add_track(s.mux.?, &track) < 0) return error.OutOfMemory;
+        if (is_aac) {
+            const e = &s.codec.aac.enc;
+            if (c.MP4E_set_dsi(s.mux.?, 0, &e.config, @intCast(e.config_len)) != c.MP4E_STATUS_OK) return error.OutOfMemory;
+        }
         return .{ .state = s };
+    }
+
+    fn openAlac(gpa: Allocator, options: root.Encoder.Options) Error!Alac {
+        const flags: u32, const format: sample.Layout = switch (options.sample_format) {
+            .i16 => .{ 1, alacLayout(16) },
+            .i24 => .{ 3, alacLayout(24) },
+            .i32 => .{ 4, alacLayout(32) },
+            else => return error.UnsupportedFormat,
+        };
+        if (options.channel_layout) |l| if (l.mask() != alac_layouts[options.channels - 1].mask()) return error.UnsupportedFormat;
+        const fast = if (options.quality) |q| blk: {
+            if (!(q >= 0 and q <= 1)) return error.InvalidOptions;
+            break :blk q < 0.5;
+        } else false;
+        var description = std.mem.zeroes(alac.AudioFormatDescription);
+        description.mSampleRate = @floatFromInt(options.sample_rate);
+        description.mFormatFlags = flags;
+        description.mChannelsPerFrame = options.channels;
+        var codec = alac.Encoder.init(gpa, description, frame_size, fast) catch |err| return switch (err) {
+            error.OutOfMemory => error.OutOfMemory,
+            error.InvalidParameter => error.InvalidOptions,
+        };
+        errdefer codec.deinit(gpa);
+        const input = try gpa.alignedAlloc(u8, .@"4", frame_size * @as(usize, options.channels) * sample.size(format.format));
+        errdefer gpa.free(input);
+        const packet_buf = try gpa.alloc(u8, codec.max_output_bytes);
+        return .{ .codec = codec, .layout = format, .input = input, .packet = packet_buf };
+    }
+
+    fn deinitCodec(s: *State) void {
+        switch (s.codec) {
+            .alac => |*a| {
+                a.codec.deinit(s.gpa);
+                s.gpa.free(a.input);
+                s.gpa.free(a.packet);
+            },
+            .aac => |*a| {
+                a.enc.deinit();
+                a.held.deinit(s.gpa);
+                a.held_sizes.deinit(s.gpa);
+            },
+        }
     }
 
     pub fn deinit(e: *Encoder) void {
@@ -896,9 +1178,7 @@ pub const Encoder = struct {
             _ = c.MP4E_close(mux);
             c_allocator.restore(prev);
         }
-        s.codec.deinit(s.gpa);
-        s.gpa.free(s.input);
-        s.gpa.free(s.packet);
+        deinitCodec(s);
         s.gpa.free(s.udta);
         s.gpa.destroy(s);
     }
@@ -908,28 +1188,42 @@ pub const Encoder = struct {
         const channels: usize = s.channels;
         std.debug.assert(samples.len % channels == 0);
         if (s.err) |err| return err;
-        const order = alac_order[channels - 1];
-        const n = sample.size(s.layout.format);
-        var i: usize = 0;
-        while (i < samples.len) : (i += channels) {
-            const frame = samples[i..][0..channels];
-            const dst = s.input[s.input_frames * channels * n ..][0 .. channels * n];
-            for (order, 0..) |src, ch| switch (s.layout.format) {
-                inline .i16, .i24, .i32 => |f| {
-                    const S = switch (f) {
-                        .i16 => i16,
-                        .i24 => i24,
-                        else => i32,
+        writeCodec(s, T, samples) catch |err| {
+            s.err = err;
+            return err;
+        };
+    }
+
+    fn writeCodec(s: *State, comptime T: type, samples: []const T) Error!void {
+        const channels: usize = s.channels;
+        switch (s.codec) {
+            .aac => |*a| {
+                // `frames` counts input before this call: a lower bound for `release`.
+                try a.enc.write(T, samples, s);
+                s.frames += samples.len / channels;
+            },
+            .alac => |*a| {
+                const order = alac_order[channels - 1];
+                const n = sample.size(a.layout.format);
+                var i: usize = 0;
+                while (i < samples.len) : (i += channels) {
+                    const frame = samples[i..][0..channels];
+                    const dst = a.input[a.input_frames * channels * n ..][0 .. channels * n];
+                    for (order, 0..) |src, ch| switch (a.layout.format) {
+                        inline .i16, .i24, .i32 => |f| {
+                            const S = switch (f) {
+                                .i16 => i16,
+                                .i24 => i24,
+                                else => i32,
+                            };
+                            std.mem.writeInt(S, dst[ch * n ..][0 .. @bitSizeOf(S) / 8], sample.convert(S, frame[src]), native);
+                        },
+                        else => unreachable,
                     };
-                    std.mem.writeInt(S, dst[ch * n ..][0 .. @bitSizeOf(S) / 8], sample.convert(S, frame[src]), native);
-                },
-                else => unreachable,
-            };
-            s.input_frames += 1;
-            if (s.input_frames == frame_size) s.encodePacket() catch |err| {
-                s.err = err;
-                return err;
-            };
+                    a.input_frames += 1;
+                    if (a.input_frames == frame_size) try s.encodePacket();
+                }
+            },
         }
     }
 
@@ -941,16 +1235,29 @@ pub const Encoder = struct {
     pub fn finish(e: *Encoder) Error!void {
         const s = e.state;
         if (s.err) |err| return err;
-        if (s.input_frames > 0) try s.encodePacket();
-        var cookie: [48]u8 = undefined;
-        const len = s.codec.getMagicCookie(&cookie);
-        if (s.frames > 0) {
-            const bitrate = s.bytes * 8 * s.rate / s.frames;
-            std.mem.writeInt(u32, cookie[16..20], std.math.cast(u32, bitrate) orelse std.math.maxInt(u32), .big);
+        switch (s.codec) {
+            .alac => |*a| {
+                if (a.input_frames > 0) try s.encodePacket();
+                var cookie: [48]u8 = undefined;
+                const len = a.codec.getMagicCookie(&cookie);
+                if (s.frames > 0) {
+                    const bitrate = s.bytes * 8 * s.rate / s.frames;
+                    std.mem.writeInt(u32, cookie[16..20], std.math.cast(u32, bitrate) orelse std.math.maxInt(u32), .big);
+                }
+                const prev = c_allocator.set(s.gpa);
+                defer c_allocator.restore(prev);
+                if (c.MP4E_set_dsi(s.mux.?, 0, &cookie, @intCast(len)) != c.MP4E_STATUS_OK) return error.OutOfMemory;
+            },
+            .aac => |*a| {
+                a.enc.finish(s) catch |err| {
+                    s.err = err;
+                    return err;
+                };
+                try s.release(s.frames);
+            },
         }
         const prev = c_allocator.set(s.gpa);
         defer c_allocator.restore(prev);
-        if (c.MP4E_set_dsi(s.mux.?, 0, &cookie, @intCast(len)) != c.MP4E_STATUS_OK) return error.OutOfMemory;
         s.finishing = true;
         const status = c.MP4E_close(s.mux.?);
         s.mux = null;
