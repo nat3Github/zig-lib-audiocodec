@@ -22,6 +22,11 @@ pub const default_frame_size = c.kALACDefaultFrameSize;
 const BitBuffer = c.BitBuffer;
 
 const max_channels = c.kALACMaxChannels;
+/// unpc_block/pc_block touch samples [0, numActive] (numActive <= 30) whatever the sample count.
+const min_buffer_len = 32;
+/// The C BitBuffer peeks 2 bytes ahead and dyn_decomp up to 5; a header runs < 140 bytes before
+/// decode() checks the position again. Packets are copied into a buffer with this much slack.
+const packet_padding = 256;
 
 fn bytesPerSample(bit_depth: u32) u32 {
     return switch (bit_depth) {
@@ -52,6 +57,8 @@ pub const Decoder = struct {
     mix_buffer_v: []i32,
     /// The "shift off" buffer shares this memory (viewed as u16), as in the C++.
     predictor: []i32,
+    /// Copy of the packet being decoded, plus packet_padding zeros.
+    packet: []u8,
 
     /// Older encoders wrap the config in 'frma' and 'alac' atoms; skips them if present.
     pub fn unwrap(magic_cookie: []const u8) []const u8 {
@@ -84,20 +91,26 @@ pub const Decoder = struct {
             else => return error.InvalidParameter,
         }
 
-        const mix_buffer_u = try gpa.alloc(i32, config.frameLength);
+        const len = @max(config.frameLength, min_buffer_len);
+        const mix_buffer_u = try gpa.alloc(i32, len);
         errdefer gpa.free(mix_buffer_u);
-        const mix_buffer_v = try gpa.alloc(i32, config.frameLength);
+        const mix_buffer_v = try gpa.alloc(i32, len);
         errdefer gpa.free(mix_buffer_v);
-        const predictor = try gpa.alloc(i32, config.frameLength);
+        const predictor = try gpa.alloc(i32, len);
+        errdefer gpa.free(predictor);
+        // the largest packet: every sample escaped at 4 bytes, plus element headers
+        const packet = try gpa.alloc(u8, @as(usize, config.frameLength) * @max(config.numChannels, 1) * 4 + 64 + packet_padding);
         @memset(mix_buffer_u, 0);
         @memset(mix_buffer_v, 0);
         @memset(predictor, 0);
+        @memset(packet, 0);
 
         return .{
             .config = config,
             .mix_buffer_u = mix_buffer_u,
             .mix_buffer_v = mix_buffer_v,
             .predictor = predictor,
+            .packet = packet,
         };
     }
 
@@ -105,6 +118,7 @@ pub const Decoder = struct {
         gpa.free(self.mix_buffer_u);
         gpa.free(self.mix_buffer_v);
         gpa.free(self.predictor);
+        gpa.free(self.packet);
         self.* = undefined;
     }
 
@@ -116,14 +130,18 @@ pub const Decoder = struct {
     /// sample (20/24-bit packed as 3 bytes). Returns the number of samples per channel decoded.
     pub fn decode(self: *Decoder, packet: []const u8, sample_buffer: []u8, requested_samples: u32, num_channels: u32) Error!u32 {
         if (num_channels == 0) return error.InvalidParameter;
-
-        // BitBuffer only reads when decoding
-        var bit_buffer: BitBuffer = undefined;
-        c.BitBufferInit(&bit_buffer, @constCast(packet.ptr), @intCast(packet.len));
-        const bits = &bit_buffer;
-
         const bit_depth: u32 = self.config.bitDepth;
         const sample_bytes = bytesPerSample(bit_depth);
+        if (requested_samples > self.config.frameLength or
+            @as(u64, requested_samples) * num_channels * sample_bytes > sample_buffer.len) return error.InvalidParameter;
+        if (packet.len > self.packet.len - packet_padding) return error.InvalidParameter;
+        // ponytail: one memcpy per packet buys the read-ahead slack the C bit reader needs
+        @memcpy(self.packet[0..packet.len], packet);
+
+        var bit_buffer: BitBuffer = undefined;
+        c.BitBufferInit(&bit_buffer, self.packet.ptr, @intCast(packet.len));
+        const bits = &bit_buffer;
+
         const out = sample_buffer.ptr;
         var num_samples = requested_samples;
         var out_num_samples = num_samples;
@@ -189,6 +207,7 @@ pub const Decoder = struct {
                         // uncompressed frame, copy data into the mix buffers to use common output code
                         if (stereo) chan_bits = bit_depth;
                         if (chan_bits == 0) return error.InvalidParameter;
+                        if (try bitsLeft(bits) < @as(u64, num_samples) * chan_bits * channels_here) return error.InvalidParameter;
                         const shift: u5 = @intCast(32 - chan_bits);
                         for (0..num_samples) |i| {
                             self.mix_buffer_u[i] = readEscapedSample(bits, chan_bits, shift);
@@ -237,6 +256,14 @@ pub const Decoder = struct {
         return out_num_samples;
     }
 
+    /// Bits before the end of the packet; an error if a read already ran past it.
+    fn bitsLeft(bits: *const BitBuffer) Error!u64 {
+        const cur = @intFromPtr(bits.cur);
+        const end = @intFromPtr(bits.end);
+        if (cur > end or (cur == end and bits.bitIndex != 0)) return error.InvalidParameter;
+        return (end - cur) * 8 - bits.bitIndex;
+    }
+
     const PredictorHeader = struct { mode: u8, den_shift: u32, pb_factor: u32, num: u8 };
 
     fn readPredictorHeader(bits: *BitBuffer, coefs: *[32]i16) PredictorHeader {
@@ -251,6 +278,9 @@ pub const Decoder = struct {
         var ag_params: c.AGParamRec = undefined;
         var num_bits: u32 = undefined;
         const n: i32 = @intCast(num_samples);
+        // dyn_decomp bounds its (cur-relative) bit position by byteSize, so make that the bytes left
+        _ = try bitsLeft(bits);
+        bits.byteSize = @intCast(@intFromPtr(bits.end) - @intFromPtr(bits.cur));
         c.set_ag_params(&ag_params, self.config.mb, (pb * h.pb_factor) / 4, self.config.kb, num_samples, num_samples, self.config.maxRun);
         if (c.dyn_decomp(&ag_params, bits, self.predictor.ptr, n, @intCast(chan_bits), &num_bits) != 0) return error.InvalidParameter;
 
@@ -379,15 +409,17 @@ pub const Encoder = struct {
         if (num_channels == 0 or num_channels > max_channels or frame_size == 0) return error.InvalidParameter;
 
         // the maximum output frame size can be no bigger than (samplesPerBlock * numChannels * ((10 + sampleSize)/8) + 1)
-        const max_output_bytes = frame_size * num_channels * ((10 + max_sample_size) / 8) + 1;
+        // plus, for small frames, the element headers (< 64 bytes each) the C++ bound left out
+        const max_output_bytes = frame_size * num_channels * ((10 + max_sample_size) / 8) + 1 + max_channels * 64;
 
-        const mix_buffer_u = try gpa.alloc(i32, frame_size);
+        const len = @max(frame_size, min_buffer_len);
+        const mix_buffer_u = try gpa.alloc(i32, len);
         errdefer gpa.free(mix_buffer_u);
-        const mix_buffer_v = try gpa.alloc(i32, frame_size);
+        const mix_buffer_v = try gpa.alloc(i32, len);
         errdefer gpa.free(mix_buffer_v);
-        const predictor_u = try gpa.alloc(i32, frame_size);
+        const predictor_u = try gpa.alloc(i32, len);
         errdefer gpa.free(predictor_u);
-        const predictor_v = try gpa.alloc(i32, frame_size);
+        const predictor_v = try gpa.alloc(i32, len);
         errdefer gpa.free(predictor_v);
         const shift_buffer_uv = try gpa.alloc(u16, frame_size * 2);
         errdefer gpa.free(shift_buffer_uv);

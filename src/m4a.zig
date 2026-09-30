@@ -646,7 +646,7 @@ pub const Decoder = struct {
             const bit_depth = cookie[5];
             const frame_length = std.mem.readInt(u32, cookie[0..4], .big);
             const rate = std.mem.readInt(u32, cookie[20..24], .big);
-            if (channels == 0 or channels > 8 or frame_length == 0 or frame_length > max_alac_frame) return error.InvalidFile;
+            if (channels == 0 or channels > 8 or frame_length == 0 or frame_length > max_alac_frame or rate == 0) return error.InvalidFile;
             // ponytail: stts durations are taken as frames; other timescales would need rescaling.
             if (rate != track.timescale) return error.UnsupportedFormat;
             s.info.sample_rate = rate;

@@ -271,7 +271,11 @@ pub const Decoder = struct {
     fn buildSeekTable(s: *State, total: u64) Error!void {
         // dr_mp3 returns to the current position afterwards, decoding up to it: start from 0.
         if (c.drmp3_seek_to_pcm_frame(&s.mp3, 0) == 0) return s.failure(error.InvalidFile);
-        var n: u32 = std.math.cast(u32, total / s.info.sample_rate + 1) orelse std.math.maxInt(u32);
+        // `total` can come from the Xing frame count (file-controlled, up to 2^32 frames): also cap
+        // by the source size (an mp3 frame is > 16 bytes), dr_mp3 clamps to the real count later.
+        const seeker = s.seeker.?;
+        const size = seeker.size(seeker.context) catch return error.SeekFailed;
+        var n: u32 = std.math.cast(u32, @min(total / s.info.sample_rate, size / 16) + 1) orelse std.math.maxInt(u32);
         const points = try s.gpa.alloc(c.drmp3_seek_point, n);
         errdefer s.gpa.free(points);
         if (c.drmp3_calculate_seek_points(&s.mp3, &n, points.ptr) == 0) return s.failure(error.InvalidFile);
