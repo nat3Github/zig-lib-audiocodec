@@ -50,8 +50,8 @@
             .lazy = true,
         },
         .alac = .{
-            .url = "git+https://github.com/nat3Github/cpp-lib-alac#c742c5d3f0ebcafc26ed2d9507000b5ba1d1c12a",
-            .hash = "alac-0.0.0-ITKurBynAQCQDqOdrlVMKGJsZg0V6y5ItNPKhjSW2a15",
+            .url = "git+https://github.com/nat3Github/cpp-lib-alac#34aea8dbc46124cbfb7575fd8a3cd18ac9aba8fc",
+            .hash = "alac-0.0.0-ITKurEOoAQB0WMy7VUjsN9vYcOXcgOiZq5pyONQ5BWUx",
             .lazy = true,
         },
         .r8brain = .{
