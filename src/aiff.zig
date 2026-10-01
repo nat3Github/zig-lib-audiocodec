@@ -44,7 +44,7 @@ fn parse(arena: Allocator, reader: *std.Io.Reader, seeker: ?root.Seeker, tag_mod
         const padded = @as(u64, size) + (size & 1);
         if (std.mem.eql(u8, &id, "COMM")) {
             comm = try parseComm(reader, size, aifc);
-            try reader.discardAll64(padded - @as(u64, if (aifc) 22 else 18));
+            try pcm.skip(reader, padded - @as(u64, if (aifc) 22 else 18));
         } else if (std.mem.eql(u8, &id, "SSND")) {
             if (size < 8) return error.InvalidFile;
             const data_offset = try reader.takeInt(u32, .big);
@@ -52,18 +52,18 @@ fn parse(arena: Allocator, reader: *std.Io.Reader, seeker: ?root.Seeker, tag_mod
             if (data_offset > size - 8) return error.InvalidFile;
             ssnd = .{ .start = offset + 8 + data_offset, .len = size - 8 - data_offset };
             if (comm != null) {
-                try reader.discardAll(data_offset);
+                try pcm.skip(reader, data_offset);
                 break;
             }
             // ponytail: COMM after SSND needs a seeker to come back; rare in practice.
             if (seeker == null) return error.UnsupportedFormat;
-            try reader.discardAll64(padded - 8);
+            try pcm.skip(reader, padded - 8);
         } else if (tag_mode != .none and textKey(&id) != null) {
             if (try pcm.readText(arena, reader, size)) |value|
                 try tags.append(arena, .{ .key = textKey(&id).?, .value = value });
-            try reader.discardAll64(padded - size);
+            try pcm.skip(reader, padded - size);
         } else {
-            try reader.discardAll64(padded);
+            try pcm.skip(reader, padded);
         }
         offset += padded;
     } else {

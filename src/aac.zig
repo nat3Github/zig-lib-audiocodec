@@ -18,6 +18,7 @@
 //! AACENC_ENCODE_EOF. Afterburner on. VBR 1..5 from quality, or CBR at Options.bitrate.
 
 const std = @import("std");
+const skip = @import("pcm.zig").skip;
 const root = @import("root.zig");
 const sample = @import("sample.zig");
 const c_allocator = @import("c_allocator.zig");
@@ -599,7 +600,7 @@ pub const Decoder = struct {
             const h = Header.parse(head[0..7]) orelse break;
             if (h.fixed != s.first.fixed or h.len > size - offset) break;
             if (n % point_step == 0) try points.append(s.gpa, offset);
-            s.reader.discardAll(h.len) catch |err| return headerError(err);
+            skip(s.reader, h.len) catch |err| return headerError(err);
             offset += h.len;
         }
         s.count = n;
@@ -690,7 +691,7 @@ pub const Decoder = struct {
         while (i < start) : (i += 1) {
             const head = s.reader.peek(7) catch |err| return headerError(err);
             const h = Header.parse(head[0..7]) orelse return error.InvalidFile;
-            s.reader.discardAll(h.len) catch |err| return headerError(err);
+            skip(s.reader, h.len) catch |err| return headerError(err);
         }
         s.next = start;
         s.skip = pos - start * fs;

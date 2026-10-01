@@ -247,11 +247,23 @@ pub fn headerError(err: anytype) Error {
     };
 }
 
+/// Reader.discardAll / discardAll64 compute `seek + n` and overflow for an n near maxInt(usize)
+/// (any u32 length on 32-bit targets, a u64 length everywhere), so every skip of a
+/// file-supplied length goes through here in chunks.
+pub fn skip(reader: *std.Io.Reader, n: u64) std.Io.Reader.Error!void {
+    var left = n;
+    while (left > 0) {
+        const chunk: usize = @intCast(@min(left, 1 << 30));
+        try reader.discardAll(chunk);
+        left -= chunk;
+    }
+}
+
 /// Reads a text tag value of `len` bytes into `arena` (trailing NULs / spaces trimmed), or skips it
 /// when it is larger than max_tag_len. Never allocates more than max_tag_len per tag.
 pub fn readText(arena: Allocator, reader: *std.Io.Reader, len: u64) (Error || error{EndOfStream})!?[]const u8 {
     if (len > max_tag_len) {
-        try reader.discardAll64(len);
+        try skip(reader, len);
         return null;
     }
     const buf = try reader.readAlloc(arena, @intCast(len));

@@ -64,15 +64,15 @@ fn parse(arena: Allocator, reader: *std.Io.Reader, tag_mode: root.TagMode) ReadE
             if (size < 24) return error.InvalidFile;
             _ = try reader.takeInt(u64, .little); // riff size
             ds64_data = try reader.takeInt(u64, .little);
-            try reader.discardAll64(padded - 16);
+            try pcm.skip(reader, padded - 16);
         } else if (std.mem.eql(u8, &id, "fmt ")) {
             fmt = try parseFmt(reader, size);
-            try reader.discardAll64(padded - size);
+            try pcm.skip(reader, padded - size);
         } else if (std.mem.eql(u8, &id, "LIST") and tag_mode != .none) {
             try parseList(arena, reader, size, &tags);
-            try reader.discardAll64(padded - size);
+            try pcm.skip(reader, padded - size);
         } else {
-            try reader.discardAll64(padded);
+            try pcm.skip(reader, padded);
         }
         offset += padded;
     };
@@ -139,7 +139,7 @@ fn parseFmt(reader: *std.Io.Reader, size: u32) ReadError!Fmt {
     f.block_align = try reader.takeInt(u16, .little);
     f.bits = try reader.takeInt(u16, .little);
     if (f.format != format_extensible) {
-        try reader.discardAll(size - 16);
+        try pcm.skip(reader, size - 16);
         return f;
     }
     if (size < 40) return error.InvalidFile;
@@ -150,15 +150,15 @@ fn parseFmt(reader: *std.Io.Reader, size: u32) ReadError!Fmt {
     // Tail in two takes: open() must work with any reader buffer >= min_buffer_len.
     if (!std.mem.eql(u8, try reader.takeArray(7), guid_tail[0..7])) return error.UnsupportedFormat;
     if (!std.mem.eql(u8, try reader.takeArray(7), guid_tail[7..])) return error.UnsupportedFormat;
-    try reader.discardAll(size - 40);
+    try pcm.skip(reader, size - 40);
     return f;
 }
 
 fn parseList(arena: Allocator, reader: *std.Io.Reader, size: u32, tags: *std.ArrayList(root.Tag)) ReadError!void {
-    if (size < 4) return reader.discardAll(size);
+    if (size < 4) return pcm.skip(reader, size);
     const kind = try reader.takeArray(4);
     var remaining: u64 = size - 4;
-    if (!std.mem.eql(u8, kind, "INFO")) return reader.discardAll64(remaining);
+    if (!std.mem.eql(u8, kind, "INFO")) return pcm.skip(reader, remaining);
     while (remaining >= 8) {
         const id = (try reader.takeArray(4)).*;
         const len = try reader.takeInt(u32, .little);
@@ -171,10 +171,10 @@ fn parseList(arena: Allocator, reader: *std.Io.Reader, size: u32, tags: *std.Arr
             } else try std.ascii.allocLowerString(arena, &id);
             try tags.append(arena, .{ .key = key, .value = value });
         }
-        try reader.discardAll64(padded - len);
+        try pcm.skip(reader, padded - len);
         remaining -= padded;
     }
-    try reader.discardAll64(remaining);
+    try pcm.skip(reader, remaining);
 }
 
 pub fn writeHeader(writer: *std.Io.Writer, options: root.Encoder.Options) Error!pcm.Encoder.Header {

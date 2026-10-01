@@ -58,7 +58,7 @@ pub fn readV2(gpa: Allocator, arena: Allocator, r: *std.Io.Reader, mode: root.Ta
     const total = header_len + @as(u64, size) + footer;
     // v2.2 flag 0x40: compression without a defined scheme, the tag is to be ignored.
     if (mode == .none or version < 2 or version > 4 or (version == 2 and flags & 0x40 != 0)) {
-        try r.discardAll64(size + footer);
+        try pcm.skip(r, size + footer);
         return total;
     }
     const tag: Tag = .{ .version = version, .unsync = flags & 0x80 != 0, .extended = version > 2 and flags & 0x40 != 0 };
@@ -74,7 +74,7 @@ pub fn readV2(gpa: Allocator, arena: Allocator, r: *std.Io.Reader, mode: root.Ta
     }
     var left = size;
     try tag.frames(arena, r, &left, mode, list);
-    try r.discardAll64(left + footer);
+    try pcm.skip(r, left + footer);
     return total;
 }
 
@@ -148,7 +148,7 @@ const Tag = struct {
             // v2.3: size excludes the size field; v2.4: syncsafe, includes it.
             const rest = if (t.version == 3) std.mem.readInt(u32, b, .big) else syncsafe(b) -| 4;
             if (rest > left.*) return;
-            try r.discardAll(rest);
+            try pcm.skip(r, rest);
             left.* -= rest;
         }
         const head_len: u32 = if (t.version == 2) 6 else 10;
@@ -181,25 +181,25 @@ const Tag = struct {
         else if (mode == .all and (std.mem.eql(u8, id, "APIC") or std.mem.eql(u8, id, "PIC")))
             .picture
         else
-            return r.discardAll(size);
+            return pcm.skip(r, size);
 
         // Frame format flags: what precedes the data, and whether we can read it at all.
         var prefix: usize = 0;
         var unsync = false;
         switch (t.version) {
             3 => {
-                if (flags & 0x00c0 != 0) return r.discardAll(size); // compressed / encrypted
+                if (flags & 0x00c0 != 0) return pcm.skip(r, size); // compressed / encrypted
                 if (flags & 0x0020 != 0) prefix += 1; // group id
             },
             4 => {
-                if (flags & 0x000c != 0) return r.discardAll(size); // compressed / encrypted
+                if (flags & 0x000c != 0) return pcm.skip(r, size); // compressed / encrypted
                 if (flags & 0x0040 != 0) prefix += 1; // group id
                 if (flags & 0x0001 != 0) prefix += 4; // data length indicator
                 unsync = t.unsync or flags & 0x0002 != 0;
             },
             else => {},
         }
-        if (kind != .picture and size > pcm.max_tag_len + 64) return r.discardAll(size);
+        if (kind != .picture and size > pcm.max_tag_len + 64) return pcm.skip(r, size);
         const raw = if (kind == .picture) try readChunked(arena, r, size) else try r.readAlloc(arena, size);
         if (raw.len < prefix + 1) return;
         const body = if (unsync) removeUnsync(raw[prefix..]) else raw[prefix..];

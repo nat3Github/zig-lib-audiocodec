@@ -343,7 +343,7 @@ fn parsePictureBlock(r: *std.Io.Reader) !root.Picture {
     const kind = try r.takeInt(u32, .big);
     const mime = try r.take(try r.takeInt(u32, .big));
     const description = try r.take(try r.takeInt(u32, .big));
-    try r.discardAll(16); // width, height, depth, colors
+    try pcm.skip(r, 16); // width, height, depth, colors
     const data = try r.take(try r.takeInt(u32, .big));
     return .{ .mime = mime, .kind = @truncate(kind), .description = description, .data = data };
 }

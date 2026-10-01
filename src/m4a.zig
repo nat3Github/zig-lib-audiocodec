@@ -17,6 +17,7 @@
 //! encoder delay) and shortens the last sample's duration, so the stts total is exact too.
 
 const std = @import("std");
+const skip = @import("pcm.zig").skip;
 const root = @import("root.zig");
 const sample = @import("sample.zig");
 const alac = @import("alac.zig");
@@ -255,7 +256,7 @@ fn readMoov(gpa: Allocator, reader: *std.Io.Reader, seeker: ?Seeker, pos: *u64) 
             try sk.seekTo(sk.context, end);
         } else {
             if (std.mem.eql(u8, head[4..8], "mdat")) return error.NotSeekable;
-            reader.discardAll64(s - header) catch |err| return headerError(err);
+            skip(reader, s - header) catch |err| return headerError(err);
         }
         offset += s;
     }
@@ -688,7 +689,7 @@ pub const Decoder = struct {
             s.info.channel_layout = s.format.layout;
             s.frame_bytes = 2 * @as(usize, s.format.channels);
             // HE-AAC files may count time at the core rate (afconvert).
-            s.scale = if (s.format.rate == track.timescale) 1 else if (s.format.rate == 2 * track.timescale) 2 else return error.UnsupportedFormat;
+            s.scale = if (s.format.rate == track.timescale) 1 else if (s.format.rate == 2 * @as(u64, track.timescale)) 2 else return error.UnsupportedFormat;
         }
         errdefer s.deinitCodec();
 
@@ -845,7 +846,7 @@ pub const Decoder = struct {
                 try sk.seekTo(sk.context, offset);
             } else {
                 if (offset < s.pos) return error.NotSeekable;
-                s.reader.discardAll64(offset - s.pos) catch |err| return switch (err) {
+                skip(s.reader, offset - s.pos) catch |err| return switch (err) {
                     error.EndOfStream => null,
                     error.ReadFailed => error.ReadFailed,
                 };

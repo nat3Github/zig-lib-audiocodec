@@ -10,8 +10,8 @@
             .lazy = true,
         },
         .vorbis = .{
-            .url = "git+https://github.com/nat3Github/c-lib-vorbis#60016bc2930608b465e0eb4ef55e9028fc525842",
-            .hash = "vorbis-1.3.7-5VeZqR17IQCk7gMN5GzmFqfbXIrD-mj8kXhFtqgTSyDb",
+            .url = "git+https://github.com/nat3Github/c-lib-vorbis#78864d8f3968b635b9509d2d79c34e9fb693b175",
+            .hash = "vorbis-1.3.7-5VeZqR17IQAjtlRaH6bMVD6KtRD1Kx29QNuDpxvl6yF4",
             .lazy = true,
         },
         .opus = .{
