@@ -336,9 +336,9 @@ fn parseTags(arena: Allocator, moov: []const u8, mode: root.TagMode) Allocator.E
                 const text = switch (value.len) {
                     inline 1, 2, 4, 8 => |len| blk: {
                         const bits = len * 8;
-                        const u = std.mem.readInt(std.meta.Int(.unsigned, bits), value[0..len], .big);
+                        const u = std.mem.readInt(@Int(.unsigned, bits), value[0..len], .big);
                         break :blk if (kind == 21)
-                            try std.fmt.allocPrint(arena, "{d}", .{@as(std.meta.Int(.signed, bits), @bitCast(u))})
+                            try std.fmt.allocPrint(arena, "{d}", .{@as(@Int(.signed, bits), @bitCast(u))})
                         else
                             try std.fmt.allocPrint(arena, "{d}", .{u});
                     },
@@ -377,9 +377,9 @@ fn buildUdta(gpa: Allocator, tags: []const root.Tag) Error![]u8 {
     const meta = try b.begin("meta");
     try b.int(u32, 0);
     const hdlr = try b.begin("hdlr");
-    try b.bytes(&[_]u8{0} ** 8); // version/flags, pre_defined
+    try b.bytes(&@as([8]u8, @splat(0))); // version/flags, pre_defined
     try b.bytes("mdirappl"); // handler type, reserved[0] as iTunes writes it
-    try b.bytes(&[_]u8{0} ** 9); // reserved[1..2], empty name
+    try b.bytes(&@as([9]u8, @splat(0))); // reserved[1..2], empty name
     b.end(hdlr);
     const ilst = try b.begin("ilst");
     for (tags) |tag| {

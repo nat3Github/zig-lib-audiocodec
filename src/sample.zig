@@ -81,14 +81,14 @@ pub fn convert(comptime To: type, x: anytype) To {
 }
 
 fn load(comptime S: type, bytes: *const [@divExact(@bitSizeOf(S), 8)]u8, endian: Endian, unsigned8: bool) S {
-    const U = std.meta.Int(.unsigned, @bitSizeOf(S));
+    const U = @Int(.unsigned, @bitSizeOf(S));
     var u = std.mem.readInt(U, bytes, endian);
     if (S == i8 and unsigned8) u ^= 0x80;
     return @bitCast(u);
 }
 
 fn store(comptime S: type, bytes: *[@divExact(@bitSizeOf(S), 8)]u8, x: S, endian: Endian, unsigned8: bool) void {
-    const U = std.meta.Int(.unsigned, @bitSizeOf(S));
+    const U = @Int(.unsigned, @bitSizeOf(S));
     var u: U = @bitCast(x);
     if (S == i8 and unsigned8) u ^= 0x80;
     std.mem.writeInt(U, bytes, u, endian);

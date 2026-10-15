@@ -267,15 +267,15 @@ const EncoderBackend = union(enum) {
 };
 
 comptime {
-    for (@typeInfo(DecoderBackend).@"union".fields) |f| {
-        if (f.type == noreturn) continue;
+    for (@typeInfo(DecoderBackend).@"union".field_names, @typeInfo(DecoderBackend).@"union".field_types) |fname, ftype| {
+        if (ftype == noreturn) continue;
         for (.{ "info", "read", "ended", "seek", "deinit" }) |decl|
-            if (!@hasDecl(f.type, decl)) @compileError("decoder backend " ++ f.name ++ " lacks " ++ decl);
+            if (!@hasDecl(ftype, decl)) @compileError("decoder backend " ++ fname ++ " lacks " ++ decl);
     }
-    for (@typeInfo(EncoderBackend).@"union".fields) |f| {
-        if (f.type == noreturn) continue;
+    for (@typeInfo(EncoderBackend).@"union".field_names, @typeInfo(EncoderBackend).@"union".field_types) |fname, ftype| {
+        if (ftype == noreturn) continue;
         for (.{ "write", "flush", "finish", "deinit" }) |decl|
-            if (!@hasDecl(f.type, decl)) @compileError("encoder backend " ++ f.name ++ " lacks " ++ decl);
+            if (!@hasDecl(ftype, decl)) @compileError("encoder backend " ++ fname ++ " lacks " ++ decl);
     }
 }
 

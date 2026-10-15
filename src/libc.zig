@@ -13,8 +13,8 @@ const builtin = @import("builtin");
 const c_allocator = @import("c_allocator.zig");
 
 comptime {
-    for (@typeInfo(exports).@"struct".decls) |decl| {
-        @export(&@field(exports, decl.name), .{ .name = "avc_" ++ decl.name });
+    for (@typeInfo(exports).@"struct".decl_names) |name| {
+        @export(&@field(exports, name), .{ .name = "avc_" ++ name });
     }
 }
 

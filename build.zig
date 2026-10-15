@@ -95,7 +95,8 @@ fn addNotice(b: *std.Build, notices: *std.ArrayList(u8), dep: *std.Build.Depende
     const gpa = b.allocator;
     notices.print(gpa, "\n\n==== {s}  {s}\n\n{s}", .{ name, source, preamble }) catch @panic("OOM");
     for (files) |file| {
-        const text = dep.builder.build_root.handle.readFileAlloc(b.graph.io, file, gpa, .unlimited) catch |err|
+        const path = dep.builder.root.joinString(gpa, file) catch @panic("OOM");
+        const text = std.Io.Dir.cwd().readFileAlloc(b.graph.io, path, gpa, .unlimited) catch |err|
             std.debug.panic("{s}: cannot read license file {s}: {t}", .{ name, file, err });
         notices.appendSlice(gpa, text) catch @panic("OOM");
         notices.append(gpa, '\n') catch @panic("OOM");
