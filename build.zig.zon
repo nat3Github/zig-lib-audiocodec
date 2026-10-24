@@ -15,18 +15,18 @@
             .lazy = true,
         },
         .opus = .{
-            .url = "git+https://github.com/nat3Github/c-lib-opus#9e772228be88706ab320b13ccae6084ca9564003",
-            .hash = "opus-1.6.1-PWTqXUatMgBola5NSnSYoQHv43mPrqDfEzLd-9KsYTCV",
+            .url = "git+https://github.com/nat3Github/c-lib-opus#3f748fc33c9e5786e6bf7877a6c82abcdc071d07",
+            .hash = "opus-1.6.1-PWTqXbaxMgA57LGUb00dd8fXdQ6yLEDfbJoUCSpZkzso",
             .lazy = true,
         },
         .opusenc = .{
-            .url = "git+https://github.com/nat3Github/c-lib-opusenc#590cb453cde82de23e8e13ae098b16e89fd63aa2",
-            .hash = "opusenc-0.3.0-ZjOtJ1_-AgAMEP7DOTtwFO5dKFGmTu6kNEiPtHX_1o6h",
+            .url = "git+https://github.com/nat3Github/c-lib-opusenc#135c85840e11f5e17aef5d57fc97fcda3eb82615",
+            .hash = "opusenc-0.3.0-ZjOtJ1_-AgAnDls2yYtVGSwfC2qr5axhWqP-y1KHxgMC",
             .lazy = true,
         },
         .opusfile = .{
-            .url = "git+https://github.com/nat3Github/c-lib-opusfile#b695456e5567d6af80414662806158d56fbdfaf0",
-            .hash = "opusfile-0.12.0-zqaoSKyYBADVWKaB4OURv9KRZ_hL-9Vtq9DGvMc_cK9k",
+            .url = "git+https://github.com/nat3Github/c-lib-opusfile#6dcbfb897b4c22b6e6b8b97d45fc80a1b0974a3d",
+            .hash = "opusfile-0.12.0-zqaoSKyYBADMBd6y5Pm56se8a4w5unsfzPoJ13JtuVOg",
             .lazy = true,
         },
         .flac = .{
