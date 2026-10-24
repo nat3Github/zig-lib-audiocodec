@@ -37,6 +37,7 @@ fn fail(comptime T: type, code: c_int) T {
 }
 
 const FILE = anyopaque;
+var std_streams: [3]u8 = undefined;
 const off_t = c_longlong;
 const time_t = c_longlong;
 const Stat = anyopaque;
@@ -306,10 +307,11 @@ pub const exports = struct {
         return fail(usize, EILSEQ);
     }
 
-    // stdio.h: no files
-    pub const stdin: ?*FILE = null;
-    pub const stdout: ?*FILE = null;
-    pub const stderr: ?*FILE = null;
+    // stdio.h: no files. The standard streams are distinct and non-null: libFLAC's
+    // stream_decoder_reset refuses to rewind when its FILE (null for a stream) equals stdin.
+    pub const stdin: ?*FILE = &std_streams[0];
+    pub const stdout: ?*FILE = &std_streams[1];
+    pub const stderr: ?*FILE = &std_streams[2];
     pub fn fopen(_: [*:0]const u8, _: [*:0]const u8) callconv(.c) ?*FILE {
         return fail(?*FILE, ENOSYS);
     }

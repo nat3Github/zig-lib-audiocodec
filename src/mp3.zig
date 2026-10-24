@@ -8,7 +8,7 @@
 //!
 //! Gapless: dr_mp3 reads the Xing/Info frame and the LAME tag (encoder delay + 529 decoder delay,
 //! padding - 529) and trims both ends. `frames`: from the Xing/Info frame count when there is one
-//! (also without a Seeker); else, with a Seeker, dr_mp3 counts every frame header once at open
+//! (also without a Seeker, decoding stops there; a count below the padding is ignored); else, with a Seeker, dr_mp3 counts every frame header once at open
 //! (reads the whole file, no decoding); else null.
 //!
 //! Output: dr_mp3 built with DR_MP3_FLOAT_OUTPUT; f32 is read straight into `out`, i16/i32 are
@@ -172,6 +172,14 @@ pub const Decoder = struct {
             return s.failure(error.InvalidFile);
         errdefer c.drmp3_uninit(&s.mp3);
 
+        // A Xing/Info frame count that doesn't even cover the LAME padding contradicts itself, and
+        // dr_mp3 then decodes every frame instead of stopping there: ignore the count, the delay and
+        // the padding (a plausible count still ends the stream, see `frames` above).
+        if (s.mp3.totalPCMFrameCount != std.math.maxInt(u64) and s.mp3.totalPCMFrameCount <= s.mp3.paddingInPCMFrames) {
+            s.mp3.totalPCMFrameCount = std.math.maxInt(u64);
+            s.mp3.delayInPCMFrames = 0;
+            s.mp3.paddingInPCMFrames = 0;
+        }
         s.info.sample_rate = s.mp3.sampleRate;
         s.info.channels = @intCast(s.mp3.channels);
         s.info.channel_layout = root.ChannelLayout.default(s.info.channels);

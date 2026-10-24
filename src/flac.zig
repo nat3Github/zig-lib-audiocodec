@@ -7,8 +7,9 @@
 //! call until a successful `seek`. If the stream ends instead, the damage was a truncated tail
 //! (libFLAC reports a cut-off last frame as lost sync): no error, `read` returns the whole frames
 //! that exist, like the pcm backends. So damage inside the last frame drops that frame silently.
-//! Trailing bytes after the last frame are ignored when STREAMINFO knows the length (libFLAC
-//! stops at total_samples). In `open` (metadata) any error fails at once.
+//! When STREAMINFO knows the length, decoding ends at total_samples: a longer last frame is cut
+//! there and trailing bytes after it are ignored (libFLAC itself would go on syncing). In `open`
+//! (metadata) any error fails at once.
 //!
 //! MD5: not checked. The per-frame CRC-16 already catches damage, and libFLAC can only verify the
 //! MD5 at the very end and disables it after any seek. ponytail: add a Decoder.Options flag
@@ -48,6 +49,8 @@ pub const Decoder = struct {
         /// Decoded samples, interleaved, left-aligned to 32 bits; `block_pos` is the next one.
         block: std.ArrayList(i32) = .empty,
         block_pos: usize = 0,
+        /// Stream position of the next frame the write callback delivers.
+        next: u64 = 0,
         /// Sticky until a successful seek (see the policy above).
         err: ?Error = null,
         /// libFLAC reported damage; becomes `err` if audio follows, is dropped at end of stream.
@@ -201,20 +204,63 @@ pub const Decoder = struct {
             }
         }
         s.eos = false;
+        {
+            const prev = c_allocator.set(s.gpa);
+            defer c_allocator.restore(prev);
+            switch (c.FLAC__stream_decoder_get_state(s.flac)) {
+                // An aborted read (our error) or failed seek leaves the decoder unusable until a flush.
+                c.FLAC__STREAM_DECODER_ABORTED, c.FLAC__STREAM_DECODER_SEEK_ERROR => _ = c.FLAC__stream_decoder_flush(s.flac),
+                else => {},
+            }
+            // The target frame arrives through the write callback, already trimmed to `frame`.
+            s.next = frame;
+            if (c.FLAC__stream_decoder_seek_absolute(s.flac, frame) != 0) return;
+            if (c.FLAC__stream_decoder_get_state(s.flac) == c.FLAC__STREAM_DECODER_MEMORY_ALLOCATION_ERROR and s.err == null) s.err = error.OutOfMemory;
+        }
+        s.clearBlock();
+        s.damaged = false;
+        if (s.err) |e| return d.seekFailed(e);
+        // libFLAC's bisection gives up on damaged seek tables, bogus frame numbers or STREAMINFO
+        // block and frame sizes. Decode from the first frame instead, like a linear read would.
+        d.rewind(frame) catch |e| return d.seekFailed(e);
+    }
+
+    fn seekFailed(d: *Decoder, err: Error) Error {
+        const s = d.state;
+        s.err = null;
+        s.damaged = false;
+        s.clearBlock();
         const prev = c_allocator.set(s.gpa);
         defer c_allocator.restore(prev);
-        switch (c.FLAC__stream_decoder_get_state(s.flac)) {
-            // An aborted read (our error) or failed seek leaves the decoder unusable until a flush.
-            c.FLAC__STREAM_DECODER_ABORTED, c.FLAC__STREAM_DECODER_SEEK_ERROR => _ = c.FLAC__stream_decoder_flush(s.flac),
-            else => {},
-        }
-        // The target frame arrives through the write callback, already trimmed to `frame`.
-        if (c.FLAC__stream_decoder_seek_absolute(s.flac, frame) != 0) return;
-        const err = s.err orelse if (s.info.frames == null) error.SeekOutOfRange else error.InvalidFile;
-        s.err = null;
-        s.clearBlock();
         _ = c.FLAC__stream_decoder_flush(s.flac);
         return err;
+    }
+
+    /// Back to the start (metadata again, ignored: !opening), then frames up to `frame`.
+    /// ponytail: linear in `frame`, only for files libFLAC can't seek in.
+    fn rewind(d: *Decoder, frame: u64) Error!void {
+        const s = d.state;
+        {
+            const prev = c_allocator.set(s.gpa);
+            defer c_allocator.restore(prev);
+            s.prefix = "";
+            const ok = c.FLAC__stream_decoder_reset(s.flac) != 0 and c.FLAC__stream_decoder_process_until_end_of_metadata(s.flac) != 0;
+            if (s.err) |e| return e;
+            if (!ok or s.damaged) return s.stateError();
+        }
+        s.next = 0;
+        while (true) {
+            s.step();
+            if (s.err) |e| return e;
+            const start = s.next - s.block.items.len / s.info.channels;
+            if (frame < s.next) {
+                s.block_pos = @intCast((frame - start) * s.info.channels);
+                return;
+            }
+            // Past the end of a truncated file reads nothing, like after a linear read.
+            if (s.eos) return if (s.info.frames == null) error.SeekOutOfRange else s.clearBlock();
+            s.clearBlock();
+        }
     }
 
     fn client(ptr: ?*anyopaque) *State {
@@ -295,20 +341,27 @@ pub const Decoder = struct {
         }
         if (s.block_pos == s.block.items.len) s.clearBlock();
         const channels = s.info.channels;
-        const dest = s.block.addManyAsSlice(s.gpa, h.blocksize * channels) catch {
+        // Cut at total_samples (see the policy above), then stop.
+        const n: usize = if (s.info.frames) |total| @intCast(@min(h.blocksize, total -| s.next)) else h.blocksize;
+        const dest = s.block.addManyAsSlice(s.gpa, n * channels) catch {
             s.err = error.OutOfMemory;
             return c.FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
         };
         const shift: u5 = @intCast(32 - h.bits_per_sample);
         for (0..channels) |ch| {
-            for (buffer[ch][0..h.blocksize], 0..) |x, i|
+            for (buffer[ch][0..n], 0..) |x, i|
                 dest[i * channels + ch] = @bitCast(@as(u32, @bitCast(x)) << shift);
         }
+        s.next += n;
+        if (s.info.frames) |total| if (s.next >= total) {
+            s.eos = true;
+        };
         return c.FLAC__STREAM_DECODER_WRITE_STATUS_CONTINUE;
     }
 
     fn metadataCallback(_: *const c.FLAC__StreamDecoder, metadata: *const c.FLAC__StreamMetadata, data: ?*anyopaque) callconv(.c) void {
         const s = client(data);
+        if (!s.opening) return; // again after a rewind
         addMetadata(s, metadata) catch |err| {
             s.err = err;
         };
