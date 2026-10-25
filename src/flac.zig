@@ -8,8 +8,10 @@
 //! (libFLAC reports a cut-off last frame as lost sync): no error, `read` returns the whole frames
 //! that exist, like the pcm backends. So damage inside the last frame drops that frame silently.
 //! When STREAMINFO knows the length, decoding ends at total_samples: a longer last frame is cut
-//! there and trailing bytes after it are ignored (libFLAC itself would go on syncing). In `open`
-//! (metadata) any error fails at once.
+//! there and trailing bytes after it are ignored (libFLAC itself would go on syncing). A frame
+//! whose header number is not its position in the stream is damage too: libFLAC's seek goes by
+//! those numbers and would land elsewhere than a linear read. In `open` (metadata) any error
+//! fails at once.
 //!
 //! MD5: not checked. The per-frame CRC-16 already catches damage, and libFLAC can only verify the
 //! MD5 at the very end and disables it after any seek. ponytail: add a Decoder.Options flag
@@ -56,6 +58,8 @@ pub const Decoder = struct {
         /// libFLAC reported damage; becomes `err` if audio follows, is dropped at end of stream.
         damaged: bool = false,
         opening: bool = true,
+        /// Inside seek_absolute: the first frame is trimmed to the target, its number is libFLAC's.
+        seeking: bool = false,
         eos: bool = false,
 
         fn clearBlock(s: *State) void {
@@ -204,6 +208,8 @@ pub const Decoder = struct {
             }
         }
         s.eos = false;
+        // The start needs no search, and frame numbers that lie can't misplace it.
+        if (frame == 0) return d.rewind(0) catch |e| d.seekFailed(e);
         {
             const prev = c_allocator.set(s.gpa);
             defer c_allocator.restore(prev);
@@ -214,7 +220,10 @@ pub const Decoder = struct {
             }
             // The target frame arrives through the write callback, already trimmed to `frame`.
             s.next = frame;
-            if (c.FLAC__stream_decoder_seek_absolute(s.flac, frame) != 0) return;
+            s.seeking = true;
+            const ok = c.FLAC__stream_decoder_seek_absolute(s.flac, frame) != 0;
+            s.seeking = false;
+            if (ok) return;
             if (c.FLAC__stream_decoder_get_state(s.flac) == c.FLAC__STREAM_DECODER_MEMORY_ALLOCATION_ERROR and s.err == null) s.err = error.OutOfMemory;
         }
         s.clearBlock();
@@ -335,7 +344,8 @@ pub const Decoder = struct {
             return c.FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
         }
         const h = frame.header;
-        if (h.channels != s.info.channels or h.bits_per_sample == 0 or h.bits_per_sample > 32) {
+        const numbered = s.seeking or h.number.sample_number == s.next;
+        if (!numbered or h.channels != s.info.channels or h.bits_per_sample == 0 or h.bits_per_sample > 32) {
             s.err = error.InvalidFile;
             return c.FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
         }
