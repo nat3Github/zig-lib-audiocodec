@@ -302,6 +302,8 @@ pub const Decoder = struct {
     fn seekCallback(_: *const c.FLAC__StreamDecoder, offset: u64, data: ?*anyopaque) callconv(.c) c.FLAC__StreamDecoderSeekStatus {
         const s = client(data);
         const seeker = s.seeker orelse return c.FLAC__STREAM_DECODER_SEEK_STATUS_UNSUPPORTED;
+        // A seek table pointing past the end: libFLAC's search fails, seek falls back to linear.
+        if (offset > seeker.size(seeker.context) catch std.math.maxInt(u64)) return c.FLAC__STREAM_DECODER_SEEK_STATUS_ERROR;
         seeker.seekTo(seeker.context, offset) catch {
             s.err = error.SeekFailed;
             return c.FLAC__STREAM_DECODER_SEEK_STATUS_ERROR;
