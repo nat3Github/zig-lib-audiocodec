@@ -37,6 +37,8 @@ pub const Decoder = struct {
     carry: usize = 0,
     scratch: []u8,
     done: bool = false,
+    /// A failed read sticks until a seek succeeds: reader position and `pos` no longer agree.
+    err: ?Error = null,
 
     /// Header fields from the container; `reader` must be positioned at `data_start`.
     pub const Header = struct {
@@ -86,6 +88,7 @@ pub const Decoder = struct {
     }
 
     pub fn read(d: *Decoder, comptime T: type, out: []T) Error!usize {
+        if (d.err) |err| return err;
         const channels = d.info_.channels;
         const block_align = d.block_align;
         const want = out.len / channels;
@@ -93,7 +96,10 @@ pub const Decoder = struct {
         while (frames < want and !d.ended()) {
             var room = @min(d.scratch.len, (want - frames) * block_align) - d.carry;
             if (d.data_len) |len| room = @min(room, len - d.pos - d.carry);
-            const n = try d.reader.readSliceShort(d.scratch[d.carry..][0..room]);
+            const n = d.reader.readSliceShort(d.scratch[d.carry..][0..room]) catch |err| {
+                d.err = err;
+                break;
+            };
             const have = d.carry + n;
             const whole = have / block_align;
             const dest = out[frames * channels ..][0 .. whole * channels];
@@ -103,10 +109,14 @@ pub const Decoder = struct {
             d.pos += whole * block_align;
             frames += whole;
             if (n < room) {
-                try d.endOfInput();
+                d.endOfInput() catch |err| {
+                    d.err = err;
+                };
                 break;
             }
         }
+        // Frames decoded before a failure go out first, the error comes with the next call.
+        if (frames == 0) if (d.err) |err| return err;
         return frames;
     }
 
@@ -145,6 +155,7 @@ pub const Decoder = struct {
         d.pos = frame * d.block_align;
         d.carry = 0;
         d.done = false;
+        d.err = null;
     }
 };
 
@@ -218,10 +229,11 @@ pub const Encoder = struct {
     }
 
     pub fn finish(e: *Encoder) Error!void {
+        // wav on a pipe: the placeholder sizes stay, and a reader would take a pad byte for audio.
+        const s = e.seeker orelse return e.writer.flush();
         const pad = e.data_bytes & 1;
         if (pad != 0) try e.writer.writeByte(0);
         try e.writer.flush();
-        const s = e.seeker orelse return; // wav on a pipe: placeholders stay
         const end = e.header_len + e.data_bytes + pad;
         switch (e.container) {
             .wav => try wav.patch(e.writer, s, e.fields, e.data_bytes, end),
