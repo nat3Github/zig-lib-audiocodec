@@ -10,8 +10,8 @@
             .lazy = true,
         },
         .vorbis = .{
-            .url = "git+https://github.com/nat3Github/c-lib-vorbis#71161690a257ab7ef2130fd23d3124152fdfffa1",
-            .hash = "vorbis-1.3.7-5VeZqR17IQCp1zdOVVQ1NhT-XWk1l9R70hz7V4LixTZH",
+            .url = "git+https://github.com/nat3Github/c-lib-vorbis#d709dddfb2ebcc32eb895d3848d85d50dce6afb4",
+            .hash = "vorbis-1.3.7-5VeZqdF-IQBwrIgQE1VbRwBinKfEgC-0zW11J5-RVx2Z",
             .lazy = true,
         },
         .opus = .{
@@ -30,23 +30,23 @@
             .lazy = true,
         },
         .flac = .{
-            .url = "git+https://github.com/nat3Github/c-lib-flac#940f66e81c5f34952eb500aa5bd82838ce74ebb0",
-            .hash = "flac-1.5.0-4bw_HTlNGgCxwqtlfuGIdMG7_X7ONyOlGNILDSMiMLqK",
+            .url = "git+https://github.com/nat3Github/c-lib-flac#345a8080678022a5c41d93cf4afac58d391ee861",
+            .hash = "flac-1.5.0-4bw_HWJOGgAfJyDCHsEHs70EAlFGmCrcGya4vnEMGYMs",
             .lazy = true,
         },
         .dr_libs = .{
-            .url = "git+https://github.com/nat3Github/c-lib-dr_libs#914c57d486425b283a955416cb57e8fc957a2a51",
-            .hash = "dr_libs-0.0.0-w9Xb7ykQEQDiKyz4pOMgDbtKhvCylD2MxNK1enLdO2he",
+            .url = "git+https://github.com/nat3Github/c-lib-dr_libs#961543a2a2992f4c2ea17229e56eaa3e55be3906",
+            .hash = "dr_libs-0.0.0-w9Xb76QREQA7rM1N7gJfuSnTWULro-Ppg4k6TKJUNp_q",
             .lazy = true,
         },
         .minimp4 = .{
-            .url = "git+https://github.com/nat3Github/c-lib-minimp4#bf88fa16da586915f780c88adf4ab2011490c15b",
-            .hash = "minimp4-0.0.0-Ysmi4WhWAgCthKzrUkQ5TjaY1QKAM0HrmkFST2_KgW35",
+            .url = "git+https://github.com/nat3Github/c-lib-minimp4#dc4a9bc926e1698a0f434edb0c12076e55a03e6d",
+            .hash = "minimp4-0.0.0-Ysmi4V9dAgCcQIPjzz_e3lObA4lZA3MVebaI0OJAdbbU",
             .lazy = true,
         },
         .fdk_aac = .{
-            .url = "git+https://github.com/nat3Github/cpp-lib-fdk-aac#515320fda76392fdf7ed11a181bc3fb713b81890",
-            .hash = "fdk_aac-2.0.3-XEQX4wnBhQAZNFSjlpZ0nOdcOL1Wu0Gn38Qvn8-MeWVi",
+            .url = "git+https://github.com/nat3Github/cpp-lib-fdk-aac#890757253d060d16cb73df6f8fdce8f61e55e461",
+            .hash = "fdk_aac-2.0.3-XEQX4y7EhQD8Ijs92wxOPDc4Hp2wju2g1To5uXVP7IJL",
             .lazy = true,
         },
         .alac = .{
