@@ -696,7 +696,7 @@ pub const Decoder = struct {
         total *= s.scale;
         s.end = total;
         if (track.edit) |e| {
-            s.start = @min(e.media_time * s.scale, total);
+            s.start = @min(e.media_time *| s.scale, total);
             // The edit's duration is in the movie timescale (often 1/1000 s), so it only trims
             // when it is shorter than the media by more than its own rounding.
             const avail = total - s.start;
@@ -705,8 +705,8 @@ pub const Decoder = struct {
             if (length +| slack <= avail) s.end = s.start + length;
         } else if (!is_alac) {
             if (itunSmpb(moov_body)) |g| {
-                s.start = @min(g.delay * s.scale, total);
-                if (g.length > 0) s.end = s.start + @min(g.length * s.scale, total - s.start);
+                s.start = @min(g.delay *| s.scale, total);
+                if (g.length > 0) s.end = s.start + @min(g.length *| s.scale, total - s.start);
             }
         }
         if (!is_alac) {
@@ -863,7 +863,8 @@ pub const Decoder = struct {
     }
 
     /// Sample exact position. ALAC packets decode independently: same samples as a linear read.
-    /// AAC decodes `Format.preroll` packets before the target first (MDCT overlap, SBR state).
+    /// AAC decodes `Format.preroll` packets before the target first (MDCT overlap, SBR state),
+    /// seek(0) all packets from the first one.
     pub fn seek(d: *Decoder, frame: u64) Error!void {
         const s = d.state;
         if (s.seeker == null) return error.NotSeekable;
@@ -880,7 +881,9 @@ pub const Decoder = struct {
         const after = std.sort.upperBound(c_uint, s.timestamps[0..s.samples], Ctx{ .target = target, .scale = s.scale }, Ctx.order);
         s.next = @intCast(after -| 1);
         if (s.codec == .aac) {
-            s.next -|= s.format.preroll();
+            // seek(0) decodes from the first packet like open does, so a damaged packet before
+            // the start fails the same way as in the linear read.
+            s.next = if (frame == 0) 0 else s.next -| s.format.preroll();
             s.codec.aac.reset();
         }
         s.media_pos = target;
