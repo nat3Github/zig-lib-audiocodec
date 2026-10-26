@@ -2,9 +2,10 @@
 //! libogg framing.
 //!
 //! Chained streams: links are decoded back to back as long as they keep the first link's rate and
-//! channel count; `frames` (seekable) counts those links. At the first link with another format,
-//! `read` returns the frames before it, then error.UnsupportedFormat. Tags come from the first
-//! link. ponytail: link changes are not exposed; that needs an Info-changed signal in the API.
+//! channel count (links without samples don't count); `frames` (seekable) counts those links. At
+//! the first link with another format, `read` returns the frames before it, then
+//! error.UnsupportedFormat. Tags come from the first link. ponytail: link changes are not exposed;
+//! that needs an Info-changed signal in the API.
 //!
 //! Damage: a lost page or packet (OV_HOLE) is an error like in flac.zig: `read` returns the frames
 //! before it, then error.InvalidFile until a successful `seek`. A truncated tail is no error.
@@ -70,6 +71,8 @@ pub const Decoder = struct {
         /// Sticky until a successful seek.
         err: ?Error = null,
         eos: bool = false,
+        /// A link with another format follows the counted ones: the frame after `frames`.
+        changed: bool = false,
 
         /// Decodes the next packet's samples into `pcm`.
         fn step(s: *State) void {
@@ -152,8 +155,13 @@ pub const Decoder = struct {
             for (0..@intCast(c.ov_streams(&s.vf))) |i| {
                 const link: c_int = @intCast(i);
                 const li = c.ov_info(&s.vf, link) orelse break;
-                if (li.channels != vi.channels or li.rate != vi.rate) break;
-                total += std.math.cast(u64, c.ov_pcm_total(&s.vf, link)) orelse return error.InvalidFile;
+                const n = std.math.cast(u64, c.ov_pcm_total(&s.vf, link)) orelse return error.InvalidFile;
+                if (n == 0) continue; // no samples: read never sees its format
+                if (li.channels != vi.channels or li.rate != vi.rate) {
+                    s.changed = true;
+                    break;
+                }
+                total += n;
             }
             s.info.frames = total;
         }
@@ -214,8 +222,12 @@ pub const Decoder = struct {
         s.pcm_len = 0;
         s.pcm_pos = 0;
         s.err = null;
-        s.eos = frame == total;
-        if (s.eos) return;
+        s.eos = false;
+        if (frame == total) {
+            // what a linear read meets there
+            if (s.changed) s.err = error.UnsupportedFormat else s.eos = true;
+            return;
+        }
         const prev = c_allocator.set(s.gpa);
         defer c_allocator.restore(prev);
         const ret = c.ov_pcm_seek(&s.vf, @intCast(frame));
