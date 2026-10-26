@@ -137,6 +137,8 @@ pub const Decoder = struct {
         if (packet.len > self.packet.len - packet_padding) return error.InvalidParameter;
         // ponytail: one memcpy per packet buys the read-ahead slack the C bit reader needs
         @memcpy(self.packet[0..packet.len], packet);
+        // reads past the end see zeros, never the tail of an earlier packet
+        @memset(self.packet[packet.len..][0..packet_padding], 0);
 
         var bit_buffer: BitBuffer = undefined;
         c.BitBufferInit(&bit_buffer, self.packet.ptr, @intCast(packet.len));
@@ -182,6 +184,8 @@ pub const Decoder = struct {
                     }
                     const channels_here: u32 = if (stereo) 2 else 1;
                     if (num_samples > self.config.frameLength) return error.InvalidParameter;
+                    // every channel gets the same count (the C++ returned the last element's)
+                    if (channel_index > 0 and num_samples != out_num_samples) return error.InvalidParameter;
                     if (@as(u64, num_samples) * num_channels * sample_bytes > sample_buffer.len) return error.InvalidParameter;
 
                     var mix_bits: i32 = 0;
@@ -235,11 +239,8 @@ pub const Decoder = struct {
                 c.ID_CCE, c.ID_PCE => return error.InvalidParameter,
                 c.ID_DSE => try dataStreamElement(bits),
                 c.ID_FIL => try fillElement(bits),
-                c.ID_END => {
-                    // frame end, all done so byte align the frame
-                    c.BitBufferByteAlign(bits, 0);
-                    return out_num_samples;
-                },
+                // frame end; the C++ returned here, leaving channels not decoded yet unwritten
+                c.ID_END => break,
                 else => unreachable,
             }
         }
@@ -248,7 +249,7 @@ pub const Decoder = struct {
         // ponytail: the C++ skipped 20-bit here; 20-bit is 3 bytes like 24-bit, so it is zeroed too.
         while (channel_index < num_channels) : (channel_index += 1) {
             var index: usize = channel_index * sample_bytes;
-            for (0..num_samples) |_| {
+            for (0..out_num_samples) |_| {
                 @memset(out[index..][0..sample_bytes], 0);
                 index += num_channels * sample_bytes;
             }
