@@ -35,8 +35,8 @@
             .lazy = true,
         },
         .dr_libs = .{
-            .url = "git+https://github.com/nat3Github/c-lib-dr_libs#961543a2a2992f4c2ea17229e56eaa3e55be3906",
-            .hash = "dr_libs-0.0.0-w9Xb76QREQA7rM1N7gJfuSnTWULro-Ppg4k6TKJUNp_q",
+            .url = "git+https://github.com/nat3Github/c-lib-dr_libs#3e08bc5f96f4bff1e3612aae4e34c184daf85fb7",
+            .hash = "dr_libs-0.0.0-w9Xb7-0aEQDxU7DK5CBba5LdoeaDc8XOxSZpCMbM5Mw9",
             .lazy = true,
         },
         .minimp4 = .{
